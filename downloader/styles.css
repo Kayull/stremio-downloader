@@ -360,6 +360,10 @@ button {
   background: linear-gradient(135deg, #8b5cf6, #6d55ff);
 }
 
+.source-pill-debrid {
+  background: linear-gradient(135deg, #0f9fb6, #1cc6d9);
+}
+
 .source-pill-hls {
   background: linear-gradient(135deg, #19b47a, #1eb980);
 }
