@@ -40,6 +40,8 @@ function cloneFiles(files) {
 	return JSON.parse(JSON.stringify(files || []))
 }
 
+const LIST_REFRESH_INTERVAL_MS = 500
+
 function formatExtension(filename) {
 	const decoded = decodeDisplayValue(filename)
 	const parts = decoded.split('.')
@@ -155,6 +157,30 @@ function renderEmptyState(message, detail) {
 	)
 }
 
+function renderLogViewer(query) {
+	const logViewer = dialog.querySelector('.log-viewer')
+	const searchMeta = dialog.querySelector('.dialog-search-meta')
+	if (!logViewer)
+		return
+
+	const lines = String(currentLogText || '').split('\n')
+	const normalizedQuery = (query || '').trim().toLowerCase()
+	const filteredLines = normalizedQuery
+		? lines.filter(line => line.toLowerCase().includes(normalizedQuery))
+		: lines
+	const visibleLines = filteredLines.filter(line => line.length > 0)
+	const content = filteredLines.join('\n').trim() || (normalizedQuery ? 'No log lines match this search.' : 'No logs yet.')
+
+	logViewer.textContent = content
+
+	if (searchMeta)
+		searchMeta.textContent = normalizedQuery
+			? ('Showing ' + visibleLines.length + ' of ' + lines.filter(line => line.length > 0).length + ' lines')
+			: ''
+
+	logViewer.scrollTop = normalizedQuery ? 0 : logViewer.scrollHeight
+}
+
 function updateResultCount(count) {
 	$('#result-count').text(count + ' item' + (count === 1 ? '' : 's'))
 }
@@ -200,7 +226,7 @@ function options() {
 		const useShowSubfolders = settings.useShowSubfolders !== false
 		dialog.classList.remove('dialog-large')
 		dialog.classList.add('dialog-options')
-		$('#dialog').html('' +
+			$('#dialog').html('' +
 			'<div class="dialog-stack dialog-stack-options">' +
 				'<div>' +
 					'<h2 class="dialog-title">Downloader options</h2>' +
@@ -235,7 +261,7 @@ function options() {
 
 function showLogs() {
 	request('logs', null, null, logs => {
-		const safeLogs = escapeHtml((logs || '').trim() || 'No logs yet.')
+		currentLogText = String(logs || '').trim()
 		dialog.classList.remove('dialog-options')
 		dialog.classList.add('dialog-large')
 		$('#dialog').html('' +
@@ -247,22 +273,24 @@ function showLogs() {
 					'</div>' +
 					'<button type="button" class="dialog-icon-button js-dialog-action" data-close-only="true" aria-label="Close logs">×</button>' +
 				'</div>' +
-				'<pre class="log-viewer">' + safeLogs + '</pre>' +
+				'<div class="dialog-search-row">' +
+					'<input id="logSearch" class="dialog-search-input" type="search" placeholder="Search logs">' +
+					'<span class="dialog-search-meta"></span>' +
+				'</div>' +
+				'<pre class="log-viewer"></pre>' +
 				'<div class="dialog-actions-row">' +
 					'<button type="button" class="dialog-button dialog-button-secondary js-dialog-action" data-method="open-log-location">' + iconSvg('folder') + '<span>Reveal Log File</span></button>' +
 					'<button type="button" class="dialog-button dialog-button-secondary js-dialog-action" data-method="clear-logs">' + iconSvg('trash') + '<span>Clear Logs</span></button>' +
 					'<button type="button" class="dialog-button dialog-button-primary js-dialog-action" data-close-only="true">' + iconSvg('logs') + '<span>Close</span></button>' +
-				'</div>' +
-			'</div>'
-		)
-		if (dialog.open)
-			return
-		dialog.showModal()
-		const logViewer = dialog.querySelector('.log-viewer')
-		if (logViewer)
-			logViewer.scrollTop = logViewer.scrollHeight
-	})
-}
+					'</div>' +
+				'</div>'
+			)
+			const wasOpen = dialog.open
+			if (!wasOpen)
+				dialog.showModal()
+			renderLogViewer('')
+		})
+	}
 
 function includes(str, query) {
 	return decodeDisplayValue(str).split('.').join(' ').toLowerCase().includes((query || '').toLowerCase())
@@ -312,6 +340,7 @@ function applyOptimisticUpdate(method, url) {
 
 let dialog
 let currentFiles = []
+let currentLogText = ''
 
 $(document).ready(() => {
 	dialog = document.querySelector('dialog')
@@ -351,13 +380,17 @@ $(document).ready(() => {
 		$.get('/api?method=set-use-show-subfolders&enabled=' + encodeURIComponent(String(this.checked)))
 	})
 
+	$('#dialog').on('input', '#logSearch', function () {
+		renderLogViewer(this.value)
+	})
+
 	function update() {
 		request('files', null, null, files => {
 			try { currentFiles = JSON.parse(files) } catch (e) { currentFiles = [] }
 			renderDownloads()
 		})
 
-		setTimeout(update, 2000)
+		setTimeout(update, LIST_REFRESH_INTERVAL_MS)
 	}
 
 	update()

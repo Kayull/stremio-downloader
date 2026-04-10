@@ -678,6 +678,37 @@ button {
   gap: 10px;
 }
 
+.dialog-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.dialog-search-input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(47, 116, 255, 0.18);
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: rgba(16, 34, 61, 0.06);
+  color: var(--text);
+  font: inherit;
+}
+
+.dialog-search-input:focus {
+  outline: none;
+  border-color: rgba(47, 116, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(47, 116, 255, 0.12);
+}
+
+.dialog-search-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .log-viewer {
   margin: 0;
   min-height: 440px;
@@ -806,6 +837,14 @@ button {
 
   .dialog-actions-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dialog-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dialog-search-meta {
+    white-space: normal;
   }
 
   .mdl-dialog.dialog-large {
