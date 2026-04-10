@@ -481,6 +481,7 @@ button {
   width: 360px;
   max-width: calc(100vw - 40px);
   padding: 18px;
+  overflow: hidden;
   border: 0;
   border-radius: 24px;
   background: rgba(248, 251, 255, 0.98);
@@ -489,6 +490,8 @@ button {
 
 .mdl-dialog.dialog-large {
   width: min(920px, calc(100vw - 40px));
+  height: min(760px, calc(100vh - 40px));
+  max-height: calc(100vh - 40px);
 }
 
 .mdl-dialog.dialog-options {
@@ -506,6 +509,9 @@ button {
 }
 
 .dialog-stack-logs {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 14px;
 }
 
@@ -715,8 +721,9 @@ button {
 
 .log-viewer {
   margin: 0;
-  min-height: 440px;
-  max-height: 68vh;
+  min-height: 0;
+  height: 100%;
+  max-height: none;
   padding: 16px;
   overflow: auto;
   border-radius: 16px;
