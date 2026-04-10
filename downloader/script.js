@@ -48,6 +48,16 @@ function formatExtension(filename) {
 	return parts.pop().toUpperCase()
 }
 
+function getSourceKindModel(file) {
+	const sourceKind = file.sourceKind || (file.isHls ? 'hls-stream' : 'direct-http')
+
+	if (sourceKind === 'torrent-via-stremio' || sourceKind === 'torrent-remote-playback')
+		return { label: 'Torrent', className: 'source-pill-torrent' }
+	if (sourceKind === 'hls-stream')
+		return { label: 'HLS', className: 'source-pill-hls' }
+	return { label: 'Web DL', className: 'source-pill-web' }
+}
+
 function getStatusModel(file) {
 	if (file.missingOnDisk)
 		return { label: 'Missing', className: 'status-missing', detail: 'Download completed, but the file is not found in the download folder.' }
@@ -89,10 +99,12 @@ function iconSvg(name) {
 
 function fileToCard(file) {
 	const status = getStatusModel(file)
+	const sourceKind = getSourceKindModel(file)
 	const displayName = decodeDisplayValue(file.filename)
 	const progress = clampProgress(file.progress)
 	const metaPills = [
 		'<span class="status-pill ' + status.className + '">' + escapeHtml(status.label) + '</span>',
+		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
 		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
 	]
 
@@ -179,7 +191,13 @@ function showDialog(title, copy, actions) {
 }
 
 function options() {
-	request('download-folder', null, null, folder => {
+	request('download-settings', null, null, settingsResponse => {
+		let settings = {}
+		try {
+			settings = JSON.parse(settingsResponse || '{}')
+		} catch (err) {}
+		const folder = settings.folder || 'Unavailable'
+		const useShowSubfolders = settings.useShowSubfolders !== false
 		dialog.classList.remove('dialog-large')
 		dialog.classList.add('dialog-options')
 		$('#dialog').html('' +
@@ -191,6 +209,14 @@ function options() {
 					'<span class="dialog-info-label">Download Folder</span>' +
 					'<code class="dialog-info-value">' + escapeHtml(folder || 'Unavailable') + '</code>' +
 				'</div>' +
+				'<label class="dialog-toggle-card">' +
+					'<span class="dialog-toggle-copy">' +
+						'<strong>Store episodes in their show subfolder</strong>' +
+						'<span>Series downloads are placed into a subfolder named from Stremio metadata.</span>' +
+					'</span>' +
+					'<input id="useShowSubfolders" class="dialog-toggle-input" type="checkbox"' + (useShowSubfolders ? ' checked' : '') + '>' +
+					'<span class="dialog-toggle-switch" aria-hidden="true"></span>' +
+				'</label>' +
 				'<div class="dialog-actions-grid">' +
 					'<button type="button" class="dialog-button dialog-button-primary js-dialog-action" data-method="open-folder">Open Download Folder</button>' +
 					'<button type="button" class="dialog-button dialog-button-secondary js-dialog-action" data-method="change-folder">Change Download Folder</button>' +
@@ -319,6 +345,10 @@ $(document).ready(() => {
 			return
 		}
 		apiCall(method, url, filename)
+	})
+
+	$('#dialog').on('change', '#useShowSubfolders', function () {
+		$.get('/api?method=set-use-show-subfolders&enabled=' + encodeURIComponent(String(this.checked)))
 	})
 
 	function update() {
