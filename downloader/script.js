@@ -50,6 +50,77 @@ function formatExtension(filename) {
 	return parts.pop().toUpperCase()
 }
 
+function formatBytes(bytes) {
+	const value = Number(bytes)
+	if (!Number.isFinite(value) || value <= 0)
+		return '0 B'
+
+	const units = ['B', 'KB', 'MB', 'GB', 'TB']
+	let size = value
+	let unitIndex = 0
+	while (size >= 1024 && unitIndex < units.length - 1) {
+		size /= 1024
+		unitIndex += 1
+	}
+
+	const decimals = size >= 100 || unitIndex === 0 ? 0 : 1
+	return size.toFixed(decimals) + ' ' + units[unitIndex]
+}
+
+function formatEta(seconds) {
+	const value = Number(seconds)
+	if (!Number.isFinite(value) || value < 0)
+		return null
+	if (value < 60)
+		return Math.max(1, Math.round(value)) + 's'
+
+	const hours = Math.floor(value / 3600)
+	const minutes = Math.floor((value % 3600) / 60)
+	const secs = Math.floor(value % 60)
+
+	if (hours > 0)
+		return hours + 'h ' + String(minutes).padStart(2, '0') + 'm'
+	if (minutes > 0)
+		return minutes + 'm ' + String(secs).padStart(2, '0') + 's'
+	return secs + 's'
+}
+
+function getDownloadStats(file) {
+	if (file.finished || file.error || file.stopped || file.missingOnDisk)
+		return []
+
+	const now = Date.now()
+	const startedAt = Number(file.time) || now
+	const elapsedSeconds = Math.max((now - startedAt) / 1000, 1)
+	const current = Math.max(0, Number(file.current) || 0)
+	const total = Math.max(0, Number(file.total) || 0)
+	const speed = current > 0 ? current / elapsedSeconds : 0
+	const stats = []
+
+	if (file.isHls) {
+		stats.push('Captured ' + formatBytes(current))
+		if (speed > 0)
+			stats.push(formatBytes(speed) + '/s')
+		return stats
+	}
+
+	if (total > 0)
+		stats.push(formatBytes(current) + ' / ' + formatBytes(total))
+	else
+		stats.push(formatBytes(current))
+
+	if (speed > 0)
+		stats.push(formatBytes(speed) + '/s')
+
+	if (total > current && speed > 0) {
+		const eta = formatEta((total - current) / speed)
+		if (eta)
+			stats.push('ETA ' + eta)
+	}
+
+	return stats
+}
+
 function getSourceKindModel(file) {
 	const sourceKind = file.sourceKind || (file.isHls ? 'hls-stream' : 'direct-http')
 
@@ -104,6 +175,7 @@ function fileToCard(file) {
 	const sourceKind = getSourceKindModel(file)
 	const displayName = decodeDisplayValue(file.filename)
 	const progress = clampProgress(file.progress)
+	const downloadStats = getDownloadStats(file)
 	const metaPills = [
 		'<span class="status-pill ' + status.className + '">' + escapeHtml(status.label) + '</span>',
 		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
@@ -129,21 +201,135 @@ function fileToCard(file) {
 
 	const progressBar = (!file.finished && !file.error && !file.stopped && !file.missingOnDisk)
 		? '' +
-			'<div class="progress-track' + (file.isHls ? ' progress-indeterminate' : '') + '">' +
-				'<div class="progress-fill"' + (file.isHls ? '' : ' style="width: ' + progress + '%"') + '></div>' +
-			'</div>'
+				'<div class="progress-track' + (file.isHls ? ' progress-indeterminate' : '') + '">' +
+					'<div class="progress-fill"' + (file.isHls ? '' : ' style="width: ' + progress + '%"') + '></div>' +
+				'</div>'
+		: ''
+
+	const statsRow = downloadStats.length
+		? '<div class="download-stats">' + downloadStats.map(stat => '<span class="download-stat">' + escapeHtml(stat) + '</span>').join('') + '</div>'
 		: ''
 
 	return '' +
-		'<article class="download-card">' +
-			'<div class="download-main">' +
-				'<h3 class="download-name">' + escapeHtml(displayName) + '</h3>' +
-				'<p class="download-subtitle">' + escapeHtml(status.detail) + '</p>' +
-				'<div class="download-meta">' + metaPills.join('') + '</div>' +
-				progressBar +
-			'</div>' +
-			'<div class="download-actions">' + actionButtons + '</div>' +
-		'</article>'
+			'<article class="download-card">' +
+				'<div class="download-main">' +
+					'<h3 class="download-name">' + escapeHtml(displayName) + '</h3>' +
+					'<p class="download-subtitle">' + escapeHtml(status.detail) + '</p>' +
+					'<div class="download-meta">' + metaPills.join('') + '</div>' +
+					statsRow +
+					progressBar +
+				'</div>' +
+				'<div class="download-actions">' + actionButtons + '</div>' +
+			'</article>'
+}
+
+function getFileKey(file) {
+	return file.url || file.filename || String(file.time || '')
+}
+
+function getMetaPillsMarkup(file, status, sourceKind, displayName, progress) {
+	const metaPills = [
+		'<span class="status-pill ' + status.className + '">' + escapeHtml(status.label) + '</span>',
+		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
+		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
+	]
+
+	if (!file.finished && !file.error && !file.stopped && !file.missingOnDisk)
+		metaPills.push('<span class="meta-pill">' + escapeHtml(file.isHls ? 'Live HLS stream' : progress + '% complete') + '</span>')
+
+	return metaPills.join('')
+}
+
+function getActionButtonsMarkup(file) {
+	let actionButtons = ''
+
+	if (file.missingOnDisk)
+		actionButtons += renderActionButton('Open Folder', iconSvg('folder'), 'open-folder', null, null)
+	else if (file.error || file.stopped)
+		actionButtons += renderActionButton('Retry', iconSvg('restart'), 'restart-download', file.url, file.filename, 'action-button-strong')
+	else if (file.finished) {
+		actionButtons += renderActionButton('Reveal', iconSvg('folder'), 'open-location', file.url, file.filename)
+		actionButtons += renderActionButton('Play', iconSvg('play'), 'play-video', file.url, file.filename)
+	} else
+		actionButtons += renderActionButton('Stop', iconSvg('stop'), 'stop-download', file.url, file.filename)
+
+	actionButtons += renderActionButton('Remove', iconSvg('trash'), 'remove-download', file.url, file.filename, 'action-button-danger')
+	return actionButtons
+}
+
+function getProgressMarkup(file, progress) {
+	if (file.finished || file.error || file.stopped || file.missingOnDisk)
+		return ''
+
+	return '' +
+		'<div class="progress-track' + (file.isHls ? ' progress-indeterminate' : '') + '">' +
+			'<div class="progress-fill"' + (file.isHls ? '' : ' style="width: ' + progress + '%"') + '></div>' +
+		'</div>'
+}
+
+function createDownloadCardElement(file) {
+	const card = document.createElement('article')
+	card.className = 'download-card'
+	card.dataset.key = getFileKey(file)
+	card.innerHTML = '' +
+		'<div class="download-main">' +
+			'<h3 class="download-name"></h3>' +
+			'<p class="download-subtitle"></p>' +
+			'<div class="download-meta"></div>' +
+			'<div class="download-stats"></div>' +
+			'<div class="download-progress-slot"></div>' +
+		'</div>' +
+		'<div class="download-actions"></div>'
+	updateDownloadCardElement(card, file)
+	return card
+}
+
+function updateDownloadCardElement(card, file) {
+	const status = getStatusModel(file)
+	const sourceKind = getSourceKindModel(file)
+	const displayName = decodeDisplayValue(file.filename)
+	const progress = clampProgress(file.progress)
+	const downloadStats = getDownloadStats(file)
+	const metaMarkup = getMetaPillsMarkup(file, status, sourceKind, displayName, progress)
+	const statsMarkup = downloadStats.map(stat => '<span class="download-stat">' + escapeHtml(stat) + '</span>').join('')
+	const progressMarkup = getProgressMarkup(file, progress)
+	const actionMarkup = getActionButtonsMarkup(file)
+
+	card.dataset.key = getFileKey(file)
+	card.querySelector('.download-name').textContent = displayName
+	card.querySelector('.download-subtitle').textContent = status.detail
+	card.querySelector('.download-meta').innerHTML = metaMarkup
+	card.querySelector('.download-stats').innerHTML = statsMarkup
+	card.querySelector('.download-progress-slot').innerHTML = progressMarkup
+
+	const actions = card.querySelector('.download-actions')
+	if (actions.dataset.signature !== actionMarkup) {
+		actions.innerHTML = actionMarkup
+		actions.dataset.signature = actionMarkup
+	}
+}
+
+function syncDownloadCards(files) {
+	const container = document.getElementById('downloads')
+	Array.from(container.children).forEach(child => {
+		if (!child.classList.contains('download-card'))
+			child.remove()
+	})
+	const existingCards = new Map(Array.from(container.querySelectorAll('.download-card')).map(card => [card.dataset.key, card]))
+
+	files.forEach((file, index) => {
+		const key = getFileKey(file)
+		const currentNode = container.children[index]
+		const card = existingCards.get(key) || createDownloadCardElement(file)
+		updateDownloadCardElement(card, file)
+		if (currentNode !== card)
+			container.insertBefore(card, currentNode || null)
+		existingCards.delete(key)
+	})
+
+	existingCards.forEach(card => {
+		card.remove()
+	})
 }
 
 function renderEmptyState(message, detail) {
@@ -304,7 +490,7 @@ function renderDownloads() {
 
 	if (currentFiles.length === 0) {
 		$('#no-downloads').fadeIn()
-		renderEmptyState('No downloads yet', 'Open Stremio, choose a stream, and the downloader will start tracking it here.')
+		renderEmptyState('No downloads yet', 'Start downloading content from Stremio to see it here.')
 		return
 	}
 
@@ -315,7 +501,7 @@ function renderDownloads() {
 		return
 	}
 
-	$('#downloads').html(filteredFiles.map(fileToCard).join(''))
+	syncDownloadCards(filteredFiles)
 }
 
 function applyOptimisticUpdate(method, url) {

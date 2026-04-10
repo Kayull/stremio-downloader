@@ -313,6 +313,25 @@ button {
   align-items: center;
 }
 
+.download-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.download-stat {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: rgba(16, 34, 61, 0.05);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .status-pill,
 .meta-pill {
   display: inline-flex;
