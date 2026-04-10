@@ -50,11 +50,11 @@ function formatExtension(filename) {
 
 function getStatusModel(file) {
 	if (file.error)
-		return { label: 'Error', className: 'status-error', detail: 'Download failed before completion.' }
+		return { label: 'Error', className: 'status-error', detail: 'Download failed.' }
 	if (file.finished)
-		return { label: 'Finished', className: 'status-finished', detail: 'Saved and ready on disk.' }
+		return { label: 'Finished', className: 'status-finished', detail: 'Saved and on-disk.' }
 	if (file.stopped)
-		return { label: 'Stopped', className: 'status-stopped', detail: 'Stopped before completion.' }
+		return { label: 'Stopped', className: 'status-stopped', detail: 'Download stopped.' }
 	if (file.isHls)
 		return { label: 'Capturing', className: 'status-downloading', detail: 'Recording an HLS stream.' }
 	return { label: 'Downloading', className: 'status-downloading', detail: clampProgress(file.progress) + '% complete.' }
@@ -78,7 +78,7 @@ function iconSvg(name) {
 		folder: '<svg viewBox="0 0 24 24" focusable="false"><path d="M21,8V19a1,1,0,0,1-1,1H4a1,1,0,0,1-1-1V5A1,1,0,0,1,4,4H9.59a1,1,0,0,1,.7.29l2.42,2.42a1,1,0,0,0,.7.29H20A1,1,0,0,1,21,8Z"></path></svg>',
 		play: '<svg viewBox="0 0 24 24" focusable="false"><path d="M8 5v14l11-7L8 5Z"></path></svg>',
 		stop: '<svg viewBox="0 0 24 24" focusable="false"><path d="M7 7h10v10H7V7Z"></path></svg>',
-		restart: '<svg viewBox="0 0 24 24" focusable="false"><path d="M12 5a7 7 0 1 1-6.32 10H3l3.5-4L10 15H7.76A5 5 0 1 0 12 7c1.3 0 2.48.5 3.37 1.32l1.42-1.42A6.94 6.94 0 0 0 12 5Z"></path></svg>',
+		restart: '<svg viewBox="0 0 24 24" focusable="false"><path d="M17.91 14c-.478 2.833-2.943 5-5.91 5-3.308 0-6-2.692-6-6s2.692-6 6-6h2.172l-2.086 2.086L13.5 10.5 18 6l-4.5-4.5-1.414 1.414L14.172 5H12c-4.418 0-8 3.582-8 8s3.582 8 8 8c4.08 0 7.438-3.055 7.93-7h-2.02z"></path></svg>',
 		logs: '<svg viewBox="0 0 24 24" focusable="false"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 2v12h14V6H5Zm3 2h8v2H8V8Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"></path></svg>'
 	}
 
