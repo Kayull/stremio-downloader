@@ -339,6 +339,10 @@ button {
   background: linear-gradient(135deg, #f35a73, #ff8a60);
 }
 
+.status-missing {
+  background: linear-gradient(135deg, #f0a34f, #ffc05a);
+}
+
 .status-stopped {
   background: linear-gradient(135deg, #8d98aa, #70819d);
 }

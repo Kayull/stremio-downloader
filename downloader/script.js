@@ -49,10 +49,12 @@ function formatExtension(filename) {
 }
 
 function getStatusModel(file) {
+	if (file.missingOnDisk)
+		return { label: 'Missing', className: 'status-missing', detail: 'Download completed, but the file is not found in the download folder.' }
 	if (file.error)
 		return { label: 'Error', className: 'status-error', detail: 'Download failed.' }
 	if (file.finished)
-		return { label: 'Finished', className: 'status-finished', detail: 'Saved and on-disk.' }
+		return { label: 'Finished', className: 'status-finished', detail: 'Saved in download folder.' }
 	if (file.stopped)
 		return { label: 'Stopped', className: 'status-stopped', detail: 'Download stopped.' }
 	if (file.isHls)
@@ -94,12 +96,14 @@ function fileToCard(file) {
 		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
 	]
 
-	if (!file.finished && !file.error && !file.stopped)
+	if (!file.finished && !file.error && !file.stopped && !file.missingOnDisk)
 		metaPills.push('<span class="meta-pill">' + escapeHtml(file.isHls ? 'Live HLS stream' : progress + '% complete') + '</span>')
 
 	let actionButtons = ''
 
-	if (file.error || file.stopped)
+	if (file.missingOnDisk)
+		actionButtons += renderActionButton('Open Folder', iconSvg('folder'), 'open-folder', null, null)
+	else if (file.error || file.stopped)
 		actionButtons += renderActionButton('Retry', iconSvg('restart'), 'restart-download', file.url, file.filename, 'action-button-strong')
 	else if (file.finished) {
 		actionButtons += renderActionButton('Reveal', iconSvg('folder'), 'open-location', file.url, file.filename)
@@ -109,7 +113,7 @@ function fileToCard(file) {
 
 	actionButtons += renderActionButton('Remove', iconSvg('trash'), 'remove-download', file.url, file.filename, 'action-button-danger')
 
-	const progressBar = (!file.finished && !file.error && !file.stopped)
+	const progressBar = (!file.finished && !file.error && !file.stopped && !file.missingOnDisk)
 		? '' +
 			'<div class="progress-track' + (file.isHls ? ' progress-indeterminate' : '') + '">' +
 				'<div class="progress-fill"' + (file.isHls ? '' : ' style="width: ' + progress + '%"') + '></div>' +
@@ -228,6 +232,9 @@ function showLogs() {
 		if (dialog.open)
 			return
 		dialog.showModal()
+		const logViewer = dialog.querySelector('.log-viewer')
+		if (logViewer)
+			logViewer.scrollTop = logViewer.scrollHeight
 	})
 }
 
