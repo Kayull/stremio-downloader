@@ -4,21 +4,35 @@ const server = require('./lib/server.js')
 const path = require('path')
 const events = require('./lib/events')
 const download = require('./lib/download')
+const logger = require('./lib/logger')
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow
 
+process.on('uncaughtException', err => {
+  logger.error('Uncaught exception', err)
+})
+
+process.on('unhandledRejection', err => {
+  logger.error('Unhandled rejection', err)
+})
+
 function createWindow () {
   // Create the browser window.
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    minWidth: 700,
-    minHeight: 600
+    width: 1280,
+    height: 820,
+    minWidth: 1140,
+    minHeight: 700,
+    backgroundColor: '#07111f',
+    show: false
   })
 
   mainWindow.setMenuBarVisibility(false)
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show()
+  })
 
   let urls = { }
 
@@ -43,6 +57,7 @@ function createWindow () {
     // in an array if your app supports multi windows, this is the time
     // when you should delete the corresponding element.
     mainWindow = null
+    logger.info('Main window closed')
     download.cleanEnd(() => {
       app.quit()
     })
@@ -52,7 +67,10 @@ function createWindow () {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.on('ready', createWindow)
+app.on('ready', () => {
+  logger.info('Electron app ready')
+  createWindow()
+})
 
 // Quit when all windows are closed.
 // app.on('window-all-closed', function () {

@@ -1,47 +1,64 @@
 <html>
 
 	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>Stremio Downloader</title>
-		<link rel="stylesheet" href="/vendor/mdl/material.orange-indigo.min.css" />
 		<link rel="stylesheet" type="text/css" href="dialog/polyfill.css" />
-		<script defer src="/vendor/mdl/material.min.js"></script>
 		<script src="/vendor/jquery/jquery.min.js"></script>
 		<link rel="stylesheet" type="text/css" href="styles.css">
 	</head>
 
 	<body>
 		<div id="pageContent">
-			<div id="header">
-				<img src="logo.png">
-			</div>
+			<div class="app-shell">
+				<header class="hero-panel">
+					<div class="hero-brand">
+						<img src="logo.png" alt="Stremio Downloader logo">
+					</div>
+				</header>
 
-			<div class="searchContent">
-				<div style="width: 50%; float: left">
-					<form class="searchForm" action="#">
-						<div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-							<input class="mdl-textfield__input" type="text" id="query" name="query">
-							<label class="mdl-textfield__label" for="query">Search</label>
+				<section class="toolbar">
+					<label class="search-card" for="query">
+						<span class="input-label">Search Downloads</span>
+						<input id="query" name="query" type="text" placeholder="Filter by title, season, codec, source or extension">
+					</label>
+
+					<div class="toolbar-actions">
+						<button type="button" class="app-button app-button-secondary" onClick="showLogs()">
+							Logs
+						</button>
+						<button type="button" class="app-button app-button-secondary" onClick="options()">
+							Options
+						</button>
+						<button type="button" class="app-button app-button-primary load-stremio" onClick="apiCall('load-stremio')">
+							Load Stremio
+						</button>
+					</div>
+				</section>
+
+				<section class="notice-stack">
+					<div id="no-downloads" class="notice-card notice-empty">
+						<div class="notice-title">No downloads yet</div>
+						<div class="notice-copy">Press “Load Stremio”, choose a stream, and it will appear here automatically.</div>
+					</div>
+					<div id="no-engine" class="notice-card notice-warning">
+						<div class="notice-title">Torrent engine unavailable</div>
+						<div class="notice-copy">Start the Stremio desktop app to download torrents. Direct web streams will still work normally.</div>
+					</div>
+				</section>
+
+				<section class="downloads-panel">
+					<div class="panel-header">
+						<div>
+							<h2>Downloads</h2>
 						</div>
-					</form>
-				</div>
-				<div style="width: 49%; float: right; margin-top: 12px; text-align: right">
-					<button class="mdl-button mdl-js-button mdl-button--raised" onClick="options()">
-						Options
-					</button>
-					<button class="mdl-button mdl-js-button mdl-button--raised load-stremio" onClick="apiCall('load-stremio')" style="margin-left: 16px">
-						Load Stremio
-					</button>
-				</div>
-			</div>
+						<div id="result-count" class="result-count">0 items</div>
+					</div>
 
-			<div class="content">
-				<div id="no-downloads" class="notes">You did not download anything yet, press "Load Stremio" to select something to download.</div>
-				<div id="no-engine" class="notes">Torrent downloads disabled, you must start the Stremio application in order to download torrents. In the meanwhile the downloader will still work with all non-torrent streams.</div>
-				<table class="mdl-data-table mdl-js-data-table" id="downloads">
-				</table>
+					<div id="downloads" class="downloads-list"></div>
+				</section>
 			</div>
-
-			<div class="spacer"></div>
 		</div>
 		<dialog id="dialog" class="mdl-dialog"></dialog>
 		<script src="dialog/polyfill.js"></script>
