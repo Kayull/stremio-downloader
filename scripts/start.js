@@ -1,5 +1,6 @@
 const startServer = require('../lib/server')
 const download = require('../lib/download')
+const instanceLock = require('../lib/instanceLock')
 const logger = require('../lib/logger')
 const systemShell = require('../lib/systemShell')
 
@@ -10,6 +11,7 @@ let httpServer = null
 
 function finishShutdown(exitCode) {
 	download.cleanEnd(() => {
+		instanceLock.release()
 		process.exit(exitCode)
 	})
 }
@@ -55,13 +57,30 @@ process.on('unhandledRejection', err => {
 
 ;(async () => {
 	const runtime = await startServer()
-	httpServer = runtime.server
+	if (!runtime.alreadyRunning)
+		httpServer = runtime.server
 
-	console.log('Stremio Downloader running at: ' + runtime.baseUrl)
-	logger.info('CLI runtime ready', { baseUrl: runtime.baseUrl, downloaderUrl: runtime.downloaderUrl, autoOpen: shouldOpenBrowser })
+	if (runtime.alreadyRunning) {
+		console.log('Stremio Downloader already running at: ' + runtime.baseUrl)
+		logger.info('Using existing Stremio Downloader runtime', {
+			baseUrl: runtime.baseUrl,
+			downloaderUrl: runtime.downloaderUrl,
+			autoOpen: shouldOpenBrowser
+		})
+	} else {
+		console.log('Stremio Downloader running at: ' + runtime.baseUrl)
+		logger.info('CLI runtime ready', {
+			baseUrl: runtime.baseUrl,
+			downloaderUrl: runtime.downloaderUrl,
+			autoOpen: shouldOpenBrowser
+		})
+	}
 
-	if (!shouldOpenBrowser)
+	if (!shouldOpenBrowser) {
+		if (runtime.alreadyRunning)
+			process.exit(0)
 		return
+	}
 
 	try {
 		await systemShell.openUrl(runtime.baseUrl)
@@ -70,6 +89,9 @@ process.on('unhandledRejection', err => {
 		logger.warn('Failed to open browser automatically', err)
 		console.error('Could not open the browser automatically. Open this URL manually:', runtime.baseUrl)
 	}
+
+	if (runtime.alreadyRunning)
+		process.exit(0)
 })().catch(err => {
 	logger.error('Failed to start Stremio Downloader', err)
 	console.error(err)
