@@ -95,8 +95,47 @@ function listProductionTopLevelPackages() {
 	return Array.from(packagePaths).sort()
 }
 
+function listProductionTopLevelPackagesFromLockfile() {
+	const lockfilePath = path.join(repoRoot, 'package-lock.json')
+	if (!fs.existsSync(lockfilePath))
+		throw new Error('package-lock.json not found')
+
+	const lockfile = JSON.parse(fs.readFileSync(lockfilePath, 'utf8'))
+	const packages = lockfile.packages
+	if (!packages || typeof packages !== 'object')
+		throw new Error('package-lock.json does not contain a packages map')
+
+	const packagePaths = new Set()
+	Object.entries(packages).forEach(([entryPath, metadata]) => {
+		if (!entryPath || !entryPath.startsWith('node_modules/'))
+			return
+		if (metadata && metadata.dev)
+			return
+
+		const relativePath = path.relative('node_modules', entryPath)
+		const topLevelPath = getTopLevelPackagePath(relativePath)
+		if (!topLevelPath)
+			return
+
+		const packagePath = path.join(sourceNodeModules, topLevelPath)
+		if (fs.existsSync(packagePath))
+			packagePaths.add(packagePath)
+	})
+
+	return Array.from(packagePaths).sort()
+}
+
 function copyProductionNodeModules() {
-	const packagePaths = listProductionTopLevelPackages()
+	let packagePaths = []
+
+	try {
+		packagePaths = listProductionTopLevelPackages()
+	} catch (err) {
+		console.warn('Falling back to package-lock.json to resolve production packages for the desktop runtime.')
+		console.warn(err.message || String(err))
+		packagePaths = listProductionTopLevelPackagesFromLockfile()
+	}
+
 	packagePaths.forEach(packagePath => {
 		const relativePath = path.relative(sourceNodeModules, packagePath)
 		const targetPath = path.join(runtimeNodeModules, relativePath)
