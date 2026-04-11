@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - '*.*.*'
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -12,6 +12,9 @@ permissions:
 jobs:
   create-release:
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,12 +24,19 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(tr -d '\r\n' < VERSION)"
-          TAG="${GITHUB_REF_NAME}"
-          if [ "${TAG}" != "v${VERSION}" ]; then
-            echo "Tag ${TAG} does not match VERSION v${VERSION}" >&2
-            exit 1
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="v${VERSION}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+            if [ "${TAG}" != "v${VERSION}" ]; then
+              echo "Tag ${TAG} does not match VERSION v${VERSION}" >&2
+              exit 1
+            fi
           fi
+
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
         env:
@@ -34,9 +44,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
-            gh release create "${GITHUB_REF_NAME}" \
-              --title "Stremio Downloader ${GITHUB_REF_NAME}" \
+          gh release view "${{ steps.version.outputs.release_tag }}" >/dev/null 2>&1 || \
+            gh release create "${{ steps.version.outputs.release_tag }}" \
+              --title "Stremio Downloader ${{ steps.version.outputs.release_tag }}" \
               --generate-notes
 
   build-and-upload:
@@ -48,15 +58,15 @@ jobs:
           - runner: macos-latest
             target: universal-apple-darwin
             platform_label: macos-universal
-            archive_name: stremio-downloader-${{ github.ref_name }}-macos-universal.zip
+            archive_suffix: macos-universal
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             platform_label: windows-x64
-            archive_name: stremio-downloader-${{ github.ref_name }}-windows-x64.zip
+            archive_suffix: windows-x64
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             platform_label: linux-x64
-            archive_name: stremio-downloader-${{ github.ref_name }}-linux-x64.zip
+            archive_suffix: linux-x64
     runs-on: ${{ matrix.runner }}
     env:
       TAURI_TARGET_TRIPLE: ${{ matrix.target }}
@@ -129,6 +139,13 @@ jobs:
           VERSION="$(tr -d '\r\n' < VERSION)"
           echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Set archive name
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "value=stremio-downloader-${{ needs.create-release.outputs.release_tag }}-${{ matrix.archive_suffix }}.zip" >> "$GITHUB_OUTPUT"
+
       - name: Create macOS release zip
         if: runner.os == 'macOS'
         shell: bash
@@ -137,7 +154,7 @@ jobs:
           RELEASE_DIR="tauri/release/${{ steps.version.outputs.value }}-${{ matrix.platform_label }}"
           ditto -c -k --sequesterRsrc --keepParent \
             "${RELEASE_DIR}/Stremio Downloader.app" \
-            "tauri/release/${{ matrix.archive_name }}"
+            "tauri/release/${{ steps.archive.outputs.value }}"
 
       - name: Create Linux release zip
         if: runner.os == 'Linux'
@@ -147,7 +164,7 @@ jobs:
           RELEASE_DIR="tauri/release/${{ steps.version.outputs.value }}-${{ matrix.platform_label }}"
           (
             cd "${RELEASE_DIR}"
-            zip -r "../${{ matrix.archive_name }}" .
+            zip -r "../${{ steps.archive.outputs.value }}" .
           )
 
       - name: Create Windows release zip
@@ -155,7 +172,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = "tauri/release/${{ steps.version.outputs.value }}-${{ matrix.platform_label }}"
-          $archivePath = "tauri/release/${{ matrix.archive_name }}"
+          $archivePath = "tauri/release/${{ steps.archive.outputs.value }}"
           if (Test-Path $archivePath) {
             Remove-Item $archivePath -Force
           }
@@ -167,4 +184,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release upload "${GITHUB_REF_NAME}" "tauri/release/${{ matrix.archive_name }}" --clobber
+          gh release upload "${{ needs.create-release.outputs.release_tag }}" "tauri/release/${{ steps.archive.outputs.value }}" --clobber
