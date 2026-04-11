@@ -50,11 +50,36 @@ function getTopLevelPackagePath(relativePath) {
 }
 
 function listProductionTopLevelPackages() {
-	const output = execFileSync(getNpmCommand(), ['ls', '--omit=dev', '--parseable', '--all'], {
-		cwd: repoRoot,
-		encoding: 'utf8',
-		stdio: ['ignore', 'pipe', 'pipe']
-	})
+	let output = ''
+
+	try {
+		output = execFileSync(getNpmCommand(), ['ls', '--omit=dev', '--parseable', '--all'], {
+			cwd: repoRoot,
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'pipe']
+		})
+	} catch (err) {
+		const fallbackOutput = typeof err.stdout === 'string'
+			? err.stdout
+			: Buffer.isBuffer(err.stdout)
+				? err.stdout.toString('utf8')
+				: ''
+		const stderr = typeof err.stderr === 'string'
+			? err.stderr
+			: Buffer.isBuffer(err.stderr)
+				? err.stderr.toString('utf8')
+				: ''
+
+		if (!fallbackOutput.trim()) {
+			const detail = stderr.trim() || err.message || 'npm ls failed without output'
+			throw new Error('Could not resolve production packages for desktop runtime: ' + detail)
+		}
+
+		console.warn('npm ls exited with a non-zero status while staging the desktop runtime; continuing with reported package paths.')
+		if (stderr.trim())
+			console.warn(stderr.trim())
+		output = fallbackOutput
+	}
 
 	const packagePaths = new Set()
 	output.split(/\r?\n/).filter(Boolean).forEach(entry => {
