@@ -35,7 +35,10 @@
       "binaries/node-launcher"
     ],
     "icon": [
-      "../downloader/logo.png",
+      "../packaging/icons/32x32.png",
+      "../packaging/icons/128x128.png",
+      "../packaging/icons/128x128@2x.png",
+      "../packaging/icons/icon.png",
       "../packaging/icons/downloader.icns",
       "../packaging/icons/downloader.ico"
     ],
