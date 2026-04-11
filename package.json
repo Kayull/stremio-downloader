@@ -1,9 +1,16 @@
 {
   "name": "stremio-downloader",
-  "version": "1.0.5",
+  "version": "2.0.0",
   "scripts": {
+    "version:sync": "node scripts/sync-version.js",
     "start": "node scripts/start.js",
-    "start:no-open": "node scripts/start.js --no-open"
+    "start:no-open": "node scripts/start.js --no-open",
+    "desktop:stage-runtime": "node scripts/stage-desktop-runtime.js",
+    "desktop:prepare-node": "node scripts/prepare-node-sidecar.js",
+    "desktop:prepare": "npm run version:sync && npm run desktop:stage-runtime && npm run desktop:prepare-node",
+    "clean:generated": "node scripts/cleanup-generated.js",
+    "tauri:dev": "npm run desktop:prepare && node scripts/sanitize-tauri-target-cache.js && tauri dev",
+    "tauri:build": "node scripts/run-tauri-build.js"
   },
   "dependencies": {
     "async": "3.2.6",
@@ -13,6 +20,9 @@
     "get-port": "7.2.0",
     "jquery": "4.0.0",
     "mime-types": "3.0.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
   },
   "engines": {
     "node": ">=18"

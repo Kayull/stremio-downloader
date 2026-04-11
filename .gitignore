@@ -1,2 +1,9 @@
+.DS_Store
 node_modules/
 packages/
+build/
+build/node-runtime/
+tauri/binaries/
+tauri/cache/
+tauri/release/
+tauri/target/

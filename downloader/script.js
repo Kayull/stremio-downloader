@@ -82,6 +82,7 @@ function cloneFiles(files) {
 }
 
 const LIST_REFRESH_INTERVAL_MS = 500
+const desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1'
 
 function formatExtension(filename) {
 	const decoded = decodeDisplayValue(filename)
@@ -127,7 +128,7 @@ function formatEta(seconds) {
 }
 
 function getDownloadStats(file) {
-	if (file.finished || file.error || file.stopped || file.missingOnDisk)
+	if (file.completed || file.error || file.stopped || file.missingOnDisk)
 		return []
 
 	const now = Date.now()
@@ -177,8 +178,8 @@ function getStatusModel(file) {
 		return { label: 'Missing', className: 'status-missing', detail: 'Download completed, but the file is not found in the download folder.' }
 	if (file.error)
 		return { label: 'Error', className: 'status-error', detail: 'Download failed.' }
-	if (file.finished)
-		return { label: 'Finished', className: 'status-finished', detail: 'Saved in download folder.' }
+	if (file.completed)
+		return { label: 'Completed', className: 'status-completed', detail: 'Saved in download folder.' }
 	if (file.stopped)
 		return { label: 'Stopped', className: 'status-stopped', detail: 'Download stopped.' }
 	if (file.isHls)
@@ -187,7 +188,7 @@ function getStatusModel(file) {
 }
 
 function getProgressPillMarkup(file, progress) {
-	if (file.finished || file.error || file.stopped || file.missingOnDisk)
+	if (file.completed || file.error || file.stopped || file.missingOnDisk)
 		return ''
 
 	return '<span class="meta-pill progress-pill">' + escapeHtml(file.isHls ? 'Live HLS stream' : progress + '% complete') + '</span>'
@@ -238,7 +239,7 @@ function fileToCard(file) {
 		actionButtons += renderActionButton('Open Folder', iconSvg('folder'), 'open-folder', null, null)
 	else if (file.error || file.stopped)
 		actionButtons += renderActionButton('Retry', iconSvg('restart'), 'restart-download', file.url, file.filename, 'action-button-strong')
-	else if (file.finished) {
+	else if (file.completed) {
 		actionButtons += renderActionButton('Reveal', iconSvg('folder'), 'open-location', file.url, file.filename)
 		actionButtons += renderActionButton('Play', iconSvg('play'), 'play-video', file.url, file.filename, null, file.playUrl)
 	} else
@@ -246,7 +247,7 @@ function fileToCard(file) {
 
 	actionButtons += renderActionButton('Remove', iconSvg('trash'), 'remove-download', file.url, file.filename, 'action-button-danger')
 
-	const progressBar = (!file.finished && !file.error && !file.stopped && !file.missingOnDisk)
+	const progressBar = (!file.completed && !file.error && !file.stopped && !file.missingOnDisk)
 		? '' +
 				'<div class="progress-track' + (file.isHls ? ' progress-indeterminate' : '') + '">' +
 					'<div class="progress-fill"' + (file.isHls ? '' : ' style="width: ' + progress + '%"') + '></div>' +
@@ -293,7 +294,7 @@ function getActionButtonsMarkup(file) {
 		actionButtons += renderActionButton('Open Folder', iconSvg('folder'), 'open-folder', null, null)
 	else if (file.error || file.stopped)
 		actionButtons += renderActionButton('Retry', iconSvg('restart'), 'restart-download', file.url, file.filename, 'action-button-strong')
-	else if (file.finished) {
+	else if (file.completed) {
 		actionButtons += renderActionButton('Reveal', iconSvg('folder'), 'open-location', file.url, file.filename)
 		actionButtons += renderActionButton('Play', iconSvg('play'), 'play-video', file.url, file.filename, null, file.playUrl)
 	} else
@@ -304,7 +305,7 @@ function getActionButtonsMarkup(file) {
 }
 
 function getProgressMarkup(file, progress) {
-	if (file.finished || file.error || file.stopped || file.missingOnDisk)
+	if (file.completed || file.error || file.stopped || file.missingOnDisk)
 		return ''
 
 	return '' +
@@ -451,8 +452,14 @@ function openBrowserUrl(url, target) {
 	return !!openedWindow
 }
 
-function openStremio() {
+function openStremioInBrowser() {
 	openBrowserUrl(getStremioUrl(), '_blank')
+}
+
+function getLaunchParams() {
+	return desktopMode
+		? { launch: 'true' }
+		: null
 }
 
 function showDialog(title, copy, actions) {
@@ -616,6 +623,7 @@ let currentLogText = ''
 
 $(document).ready(() => {
 	window.name = 'stremio-downloader'
+	document.body.classList.toggle('desktop-shell', desktopMode)
 	dialog = document.querySelector('dialog')
 
 	dialogPolyfill.registerDialog(dialog)
@@ -723,26 +731,43 @@ async function handleChangeFolder() {
 	showErrorDialog('Download folder not changed', result.message || 'Could not open a native folder picker on this system.')
 }
 
+async function handleLoadStremio() {
+	if (desktopMode) {
+		const result = await requestJson('load-stremio', null, null, getLaunchParams())
+		if (!result.done)
+			throw new Error(result.message || 'Could not open Stremio.')
+		return
+	}
+
+	openStremioInBrowser()
+}
+
 async function handleInstallAddon() {
-	const result = await requestJson('install-addon')
+	const result = await requestJson('install-addon', null, null, getLaunchParams())
 	if (!result.url) {
 		showErrorDialog('Could not install add-on', 'The local service did not return a Stremio add-on URL.')
 		return
 	}
 
 	closeDialog()
+	if (desktopMode)
+		return
+
 	window.location.assign(result.url)
 }
 
 async function handlePlay(fileUrl, filename, playUrl) {
-	if (playUrl) {
+	if (playUrl && !desktopMode) {
 		openBrowserUrl(playUrl, '_blank')
 		return
 	}
 
-	const result = await requestJson('play-video', fileUrl, decodeDisplayValue(filename))
+	const result = await requestJson('play-video', fileUrl, decodeDisplayValue(filename), getLaunchParams())
 	if (!result.url)
 		throw new Error('The downloaded file is no longer available.')
+
+	if (desktopMode)
+		return
 
 	openBrowserUrl(result.url, '_blank')
 }
@@ -750,7 +775,7 @@ async function handlePlay(fileUrl, filename, playUrl) {
 async function handleAction(method, url, filename, options) {
 	try {
 		if (method === 'load-stremio') {
-			openStremio()
+			await handleLoadStremio()
 			return
 		}
 

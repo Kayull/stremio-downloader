@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Stremio Downloader",
+  "version": "2.0.0",
+  "identifier": "io.github.kayull.stremio-downloader",
+  "build": {
+    "frontendDist": "static"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": []
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "stremio-downloader"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "appimage",
+      "deb",
+      "nsis"
+    ],
+    "resources": [
+      "../build/desktop-runtime",
+      "../build/node-runtime"
+    ],
+    "externalBin": [
+      "binaries/node-launcher"
+    ],
+    "icon": [
+      "../downloader/logo.png",
+      "../packaging/icons/downloader.icns",
+      "../packaging/icons/downloader.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
+  }
+}
