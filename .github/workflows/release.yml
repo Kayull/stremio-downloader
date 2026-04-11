@@ -71,6 +71,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       TAURI_TARGET_TRIPLE: ${{ matrix.target }}
+      DESKTOP_STRIP_BINARIES: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -84,6 +85,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          workspaces: |
+            tauri -> target
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -113,6 +121,13 @@ jobs:
           set -euo pipefail
           echo "value=$(node -p "process.version.slice(1)")" >> "$GITHUB_OUTPUT"
 
+      - name: Cache universal macOS Node runtimes
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: .ci/node
+          key: ${{ runner.os }}-node-runtime-${{ steps.node-version.outputs.value }}
+
       - name: Download universal macOS Node runtimes
         if: runner.os == 'macOS'
         shell: bash
@@ -121,10 +136,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .ci/node
-          curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-arm64.tar.gz" -o ".ci/node/node-v${NODE_VERSION}-darwin-arm64.tar.gz"
-          curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-x64.tar.gz" -o ".ci/node/node-v${NODE_VERSION}-darwin-x64.tar.gz"
-          tar -xzf ".ci/node/node-v${NODE_VERSION}-darwin-arm64.tar.gz" -C .ci/node
-          tar -xzf ".ci/node/node-v${NODE_VERSION}-darwin-x64.tar.gz" -C .ci/node
+          if [ ! -x ".ci/node/node-v${NODE_VERSION}-darwin-arm64/bin/node" ]; then
+            curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-arm64.tar.gz" -o ".ci/node/node-v${NODE_VERSION}-darwin-arm64.tar.gz"
+            tar -xzf ".ci/node/node-v${NODE_VERSION}-darwin-arm64.tar.gz" -C .ci/node
+          fi
+          if [ ! -x ".ci/node/node-v${NODE_VERSION}-darwin-x64/bin/node" ]; then
+            curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-x64.tar.gz" -o ".ci/node/node-v${NODE_VERSION}-darwin-x64.tar.gz"
+            tar -xzf ".ci/node/node-v${NODE_VERSION}-darwin-x64.tar.gz" -C .ci/node
+          fi
           echo "DESKTOP_NODE_BIN_AARCH64_APPLE_DARWIN=${GITHUB_WORKSPACE}/.ci/node/node-v${NODE_VERSION}-darwin-arm64/bin/node" >> "$GITHUB_ENV"
           echo "DESKTOP_NODE_BIN_X86_64_APPLE_DARWIN=${GITHUB_WORKSPACE}/.ci/node/node-v${NODE_VERSION}-darwin-x64/bin/node" >> "$GITHUB_ENV"
 

@@ -1,5 +1,6 @@
 const fs = require('fs')
 const path = require('path')
+const { execFileSync } = require('child_process')
 
 const repoRoot = path.resolve(__dirname, '..')
 const binariesDir = path.join(repoRoot, 'tauri', 'binaries')
@@ -99,25 +100,56 @@ function getNodeBinaryName(nodeBinaryPath) {
 	return path.basename(nodeBinaryPath)
 }
 
+function getStripArgs() {
+	if (process.env.DESKTOP_STRIP_BINARIES !== '1')
+		return null
+	if (process.platform === 'darwin')
+		return ['-S', '-x']
+	if (process.platform === 'linux')
+		return ['--strip-unneeded']
+	return null
+}
+
+function stripBinaryIfPossible(targetPath) {
+	const stripArgs = getStripArgs()
+	if (!stripArgs)
+		return
+
+	try {
+		execFileSync('strip', stripArgs.concat(targetPath), {
+			stdio: 'ignore'
+		})
+		if (process.platform === 'darwin') {
+			execFileSync('codesign', ['--force', '--sign', '-', targetPath], {
+				stdio: 'ignore'
+			})
+		}
+	} catch (err) {
+		console.warn('Could not strip bundled binary:', targetPath)
+		console.warn(err.message || String(err))
+	}
+}
+
 function prepareUnixNodeRuntime(runtimeTargetRoot, nodeBinaryPath) {
 	const sourcePrefix = path.resolve(path.dirname(nodeBinaryPath), '..')
 	const sourceLibDir = path.join(sourcePrefix, 'lib')
-	const sourceBinDir = path.dirname(nodeBinaryPath)
 	const targetBinDir = path.join(runtimeTargetRoot, 'bin')
 	const targetLibDir = path.join(runtimeTargetRoot, 'lib')
+	const targetNodeBinaryPath = path.join(targetBinDir, getNodeBinaryName(nodeBinaryPath))
 
-	copyFile(nodeBinaryPath, path.join(targetBinDir, getNodeBinaryName(nodeBinaryPath)), true)
+	copyFile(nodeBinaryPath, targetNodeBinaryPath, true)
+	stripBinaryIfPossible(targetNodeBinaryPath)
 
 	if (fs.existsSync(sourceLibDir)) {
 		fs.mkdirSync(targetLibDir, { recursive: true })
 		fs.readdirSync(sourceLibDir)
 			.filter(entry => entry.startsWith('libnode'))
 			.forEach(entry => {
-				copyFile(path.join(sourceLibDir, entry), path.join(targetLibDir, entry), false)
+				const targetLibPath = path.join(targetLibDir, entry)
+				copyFile(path.join(sourceLibDir, entry), targetLibPath, false)
+				stripBinaryIfPossible(targetLibPath)
 			})
 	}
-
-	copyDirectoryIfPresent(path.join(sourcePrefix, 'lib', 'node_modules'), path.join(targetLibDir, 'node_modules'))
 }
 
 function prepareWindowsNodeRuntime(runtimeTargetRoot, nodeBinaryPath) {
@@ -131,8 +163,6 @@ function prepareWindowsNodeRuntime(runtimeTargetRoot, nodeBinaryPath) {
 		.forEach(entry => {
 			copyFile(path.join(sourceDir, entry), path.join(targetBinDir, entry), false)
 		})
-
-	copyDirectoryIfPresent(path.join(sourceDir, 'node_modules'), path.join(runtimeTargetRoot, 'node_modules'))
 }
 
 function buildUnixLauncher(targetTriples, repoNodeRoot, packagedNodeRoot, nodeBinaryName) {
@@ -175,44 +205,27 @@ exit 1
 `
 }
 
-function buildWindowsLauncher(targetTriple, repoNodeRoot, packagedNodeRoot, nodeBinaryName) {
-	return `@echo off
-setlocal
-
-set "TARGET_TRIPLE=${targetTriple}"
-set "PACKAGED_NODE=${packagedNodeRoot}\\%TARGET_TRIPLE%\\bin\\${nodeBinaryName}"
-set "DEV_NODE=${repoNodeRoot}\\%TARGET_TRIPLE%\\bin\\${nodeBinaryName}"
-
-if exist "%PACKAGED_NODE%" (
-  "%PACKAGED_NODE%" %*
-  exit /b %ERRORLEVEL%
-)
-
-if exist "%DEV_NODE%" (
-  "%DEV_NODE%" %*
-  exit /b %ERRORLEVEL%
-)
-
-echo Bundled Node runtime not found. Checked: %PACKAGED_NODE% and %DEV_NODE% 1>&2
-exit /b 1
-`
-}
-
 function prepareLauncher(requestedTargetTriple, targetTriples, nodeBinaryName, launcherTargetTriple) {
 	const resolvedLauncherTargetTriple = launcherTargetTriple || requestedTargetTriple
-	const launcherName = 'node-launcher-' + resolvedLauncherTargetTriple + (process.platform === 'win32' ? '.cmd' : '')
+	const launcherName = 'node-launcher-' + resolvedLauncherTargetTriple + (process.platform === 'win32' ? '.exe' : '')
 	const launcherPath = path.join(binariesDir, launcherName)
-	const packagedNodeRoot = process.platform === 'win32'
-		? '%~dp0..\\Resources\\_up_\\build\\node-runtime'
-		: '$SELF_DIR/../Resources/_up_/build/node-runtime'
-	const repoNodeRoot = process.platform === 'win32'
-		? nodeRuntimeRoot.replace(/\//g, '\\')
-		: nodeRuntimeRoot.replace(/"/g, '\\"')
-	const content = process.platform === 'win32'
-		? buildWindowsLauncher(resolvedLauncherTargetTriple, repoNodeRoot, packagedNodeRoot, nodeBinaryName)
-		: buildUnixLauncher(launcherTargetTriple ? [resolvedLauncherTargetTriple] : targetTriples, repoNodeRoot, packagedNodeRoot, nodeBinaryName)
 
 	fs.mkdirSync(binariesDir, { recursive: true })
+	if (process.platform === 'win32') {
+		const sourceNodeBinaryPath = path.join(nodeRuntimeRoot, resolvedLauncherTargetTriple, 'bin', nodeBinaryName)
+		copyFile(sourceNodeBinaryPath, launcherPath, true)
+		return launcherPath
+	}
+
+	const packagedNodeRoot = '$SELF_DIR/../Resources/_up_/build/node-runtime'
+	const repoNodeRoot = nodeRuntimeRoot.replace(/"/g, '\\"')
+	const content = buildUnixLauncher(
+		launcherTargetTriple ? [resolvedLauncherTargetTriple] : targetTriples,
+		repoNodeRoot,
+		packagedNodeRoot,
+		nodeBinaryName
+	)
+
 	fs.writeFileSync(launcherPath, content)
 	if (process.platform !== 'win32')
 		fs.chmodSync(launcherPath, 0o755)
