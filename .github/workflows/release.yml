@@ -3,8 +3,13 @@ name: Release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - master
+      - main
     tags:
       - 'v*.*.*'
+    paths:
+      - 'VERSION'
 
 permissions:
   contents: write
@@ -13,32 +18,59 @@ jobs:
   create-release:
     runs-on: ubuntu-22.04
     outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
       version: ${{ steps.version.outputs.version }}
       release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Read version
+      - name: Resolve release version
         id: version
         shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           VERSION="$(tr -d '\r\n' < VERSION)"
+          SHOULD_RELEASE="false"
+          TAG="v${VERSION}"
 
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            TAG="v${VERSION}"
-          else
+            SHOULD_RELEASE="true"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
             if [ "${TAG}" != "v${VERSION}" ]; then
               echo "Tag ${TAG} does not match VERSION v${VERSION}" >&2
               exit 1
             fi
+            SHOULD_RELEASE="true"
+          else
+            PREVIOUS_VERSION=""
+            if [ -n "${BEFORE_SHA}" ] && [ "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]; then
+              PREVIOUS_VERSION="$(git show "${BEFORE_SHA}:VERSION" 2>/dev/null | tr -d '\r\n' || true)"
+            fi
+
+            if [ -z "${PREVIOUS_VERSION}" ]; then
+              SHOULD_RELEASE="true"
+              echo "No previous VERSION found; treating this push as a release trigger."
+            elif [ "${PREVIOUS_VERSION}" = "${VERSION}" ]; then
+              echo "VERSION did not change; skipping release."
+            elif [ "$(printf '%s\n%s\n' "${PREVIOUS_VERSION}" "${VERSION}" | sort -V | tail -n 1)" = "${VERSION}" ]; then
+              SHOULD_RELEASE="true"
+              echo "VERSION increased from ${PREVIOUS_VERSION} to ${VERSION}; creating release."
+            else
+              echo "VERSION changed from ${PREVIOUS_VERSION} to ${VERSION}, but it did not increase; skipping release."
+            fi
           fi
 
+          echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
+        if: steps.version.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -46,11 +78,13 @@ jobs:
           set -euo pipefail
           gh release view "${{ steps.version.outputs.release_tag }}" >/dev/null 2>&1 || \
             gh release create "${{ steps.version.outputs.release_tag }}" \
+              --target "${GITHUB_SHA}" \
               --title "Stremio Downloader ${{ steps.version.outputs.release_tag }}" \
               --generate-notes
 
   build-and-upload:
     needs: create-release
+    if: needs.create-release.outputs.should_release == 'true'
     name: Build ${{ matrix.archive_suffix }}
     strategy:
       fail-fast: false
