@@ -51,6 +51,7 @@ jobs:
 
   build-and-upload:
     needs: create-release
+    name: Build ${{ matrix.archive_suffix }}
     strategy:
       fail-fast: false
       matrix:
