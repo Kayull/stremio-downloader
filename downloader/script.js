@@ -83,6 +83,7 @@ function cloneFiles(files) {
 
 const LIST_REFRESH_INTERVAL_MS = 500
 const desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1'
+const PENDING_ACTION_METHODS = ['remove-download', 'stop-download']
 
 function formatExtension(filename) {
 	const decoded = decodeDisplayValue(filename)
@@ -395,6 +396,109 @@ function renderEmptyState(message, detail) {
 	)
 }
 
+function isPendingActionMethod(method) {
+	return PENDING_ACTION_METHODS.includes(method)
+}
+
+function getPendingActionId(method, url) {
+	return method + '::' + String(url || '')
+}
+
+function getPendingActionLabel(method) {
+	if (method === 'remove-download')
+		return 'Removing'
+	if (method === 'stop-download')
+		return 'Stopping'
+	return 'Processing'
+}
+
+function formatPendingActionText(action) {
+	const name = decodeDisplayValue(action.filename) || 'download'
+	return getPendingActionLabel(action.method) + ' ' + name
+}
+
+function updatePendingActionsDetail() {
+	const detail = document.getElementById('pending-actions')
+	if (!detail)
+		return
+
+	if (!pendingActions.length) {
+		detail.textContent = ''
+		detail.title = ''
+		detail.classList.remove('is-visible')
+		return
+	}
+
+	const previews = pendingActions.slice(0, 2).map(formatPendingActionText)
+	const overflowCount = pendingActions.length - previews.length
+	const summary = (pendingActions.length === 1 ? '1 pending action' : (pendingActions.length + ' pending actions')) +
+		': ' +
+		previews.join(' • ') +
+		(overflowCount > 0 ? (' • +' + overflowCount + ' more') : '')
+
+	detail.textContent = summary
+	detail.title = summary
+	detail.classList.add('is-visible')
+}
+
+function applyFileAction(files, method, url) {
+	const list = Array.isArray(files) ? files : []
+
+	if (!url)
+		return list.slice()
+
+	if (method === 'remove-download')
+		return list.filter(file => file.url !== url)
+
+	if (method === 'stop-download') {
+		return list.map(file => file.url === url
+			? Object.assign({}, file, { stopped: true })
+			: file
+		)
+	}
+
+	return list.slice()
+}
+
+function getVisibleFiles(files) {
+	return pendingActions.reduce((nextFiles, action) => applyFileAction(nextFiles, action.method, action.url), cloneFiles(files))
+}
+
+function syncCurrentFiles() {
+	currentFiles = getVisibleFiles(serverFiles)
+	renderDownloads()
+}
+
+function addPendingAction(method, url, filename) {
+	if (!isPendingActionMethod(method) || !url)
+		return null
+
+	const actionId = getPendingActionId(method, url)
+	if (pendingActions.some(action => action.id === actionId))
+		return actionId
+
+	pendingActions = pendingActions.concat({
+		id: actionId,
+		method,
+		url,
+		filename: decodeDisplayValue(filename)
+	})
+	syncCurrentFiles()
+	return actionId
+}
+
+function removePendingAction(actionId) {
+	if (!actionId)
+		return
+
+	const nextPendingActions = pendingActions.filter(action => action.id !== actionId)
+	if (nextPendingActions.length === pendingActions.length)
+		return
+
+	pendingActions = nextPendingActions
+	syncCurrentFiles()
+}
+
 function renderLogViewer(query) {
 	const logViewer = dialog.querySelector('.log-viewer')
 	const searchMeta = dialog.querySelector('.dialog-search-meta')
@@ -580,6 +684,7 @@ function renderDownloads() {
 	const filteredFiles = currentFiles.filter(file => includes(file.filename, query))
 
 	updateResultCount(filteredFiles.length)
+	updatePendingActionsDetail()
 
 	if (currentFiles.length === 0) {
 		$('#no-downloads').fadeIn()
@@ -597,29 +702,11 @@ function renderDownloads() {
 	syncDownloadCards(filteredFiles)
 }
 
-function applyOptimisticUpdate(method, url) {
-	if (!url)
-		return false
-
-	if (method === 'remove-download') {
-		currentFiles = currentFiles.filter(file => file.url !== url)
-		return true
-	}
-
-	if (method === 'stop-download') {
-		currentFiles = currentFiles.map(file => file.url === url
-			? Object.assign({}, file, { stopped: true })
-			: file
-		)
-		return true
-	}
-
-	return false
-}
-
 let dialog
+let serverFiles = []
 let currentFiles = []
 let currentLogText = ''
+let pendingActions = []
 
 $(document).ready(() => {
 	window.name = 'stremio-downloader'
@@ -667,8 +754,8 @@ $(document).ready(() => {
 
 	function update() {
 		request('files', null, null, files => {
-			try { currentFiles = JSON.parse(files) } catch (e) { currentFiles = [] }
-			renderDownloads()
+			try { serverFiles = JSON.parse(files) } catch (e) { serverFiles = [] }
+			syncCurrentFiles()
 		})
 
 		setTimeout(update, LIST_REFRESH_INTERVAL_MS)
@@ -697,23 +784,20 @@ $(document).ready(() => {
 })
 
 async function apiCall(method, url, filename) {
-	const previousFiles = cloneFiles(currentFiles)
-	const didOptimisticallyUpdate = applyOptimisticUpdate(method, url)
 	const normalizedFilename = decodeDisplayValue(filename)
-
-	if (didOptimisticallyUpdate)
-		renderDownloads()
+	const pendingActionId = addPendingAction(method, url, normalizedFilename)
 
 	try {
 		await requestPromise(method, url, normalizedFilename)
+		if (pendingActionId)
+			serverFiles = applyFileAction(serverFiles, method, url)
+		if (pendingActionId)
+			removePendingAction(pendingActionId)
 		if (method !== 'logs')
 			closeDialog()
 	} catch (err) {
-		if (didOptimisticallyUpdate) {
-			currentFiles = previousFiles
-			renderDownloads()
-		}
-
+		if (pendingActionId)
+			removePendingAction(pendingActionId)
 		showErrorDialog('Action failed', getRequestFailureMessage(err))
 	}
 }
