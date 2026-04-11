@@ -1,6 +1,47 @@
-function request(method, url, filename, cb) {
-	cb = cb || (() => {})
-	return $.get('/api?method=' + method + (url ? ('&url=' + encodeURIComponent(url)) : '') + (filename ? ('&filename=' + encodeURIComponent(filename)) : ''), cb)
+function buildApiUrl(method, url, filename, extraParams) {
+	const params = new URLSearchParams()
+	params.set('method', method)
+	if (url)
+		params.set('url', url)
+	if (filename)
+		params.set('filename', filename)
+	Object.entries(extraParams || {}).forEach(([key, value]) => {
+		if (value != null)
+			params.set(key, value)
+	})
+	return '/api?' + params.toString()
+}
+
+function request(method, url, filename, cb, extraParams) {
+	const jqxhr = $.ajax({
+		url: buildApiUrl(method, url, filename, extraParams),
+		type: 'GET',
+		dataType: 'text'
+	})
+
+	if (cb)
+		jqxhr.done(cb)
+
+	return jqxhr
+}
+
+function requestPromise(method, url, filename, extraParams) {
+	return new Promise((resolve, reject) => {
+		request(method, url, filename, null, extraParams).done(resolve).fail(reject)
+	})
+}
+
+function parseJsonResponse(responseText) {
+	try {
+		return JSON.parse(responseText || '{}')
+	} catch (err) {
+		return {}
+	}
+}
+
+async function requestJson(method, url, filename, extraParams) {
+	const responseText = await requestPromise(method, url, filename, extraParams)
+	return parseJsonResponse(responseText)
 }
 
 function escapeHtml(value) {
@@ -145,12 +186,13 @@ function getStatusModel(file) {
 	return { label: 'Downloading', className: 'status-downloading', detail: clampProgress(file.progress) + '% complete.' }
 }
 
-function renderActionButton(label, icon, method, url, filename, accentClassName) {
+function renderActionButton(label, icon, method, url, filename, accentClassName, playUrl) {
 	return '' +
 		'<button type="button" class="action-button' + (accentClassName ? (' ' + accentClassName) : '') + ' js-action" aria-label="' + escapeAttribute(label) + '" title="' + escapeAttribute(label) + '"' +
 			' data-method="' + escapeAttribute(method) + '"' +
 			(url ? ' data-url="' + escapeAttribute(url) + '"' : '') +
 			(filename ? ' data-filename="' + escapeAttribute(filename) + '"' : '') +
+			(playUrl ? ' data-play-url="' + escapeAttribute(playUrl) + '"' : '') +
 		'>' +
 			'<span class="action-icon" aria-hidden="true">' + icon + '</span>' +
 			'<span class="action-label">' + escapeHtml(label) + '</span>' +
@@ -193,7 +235,7 @@ function fileToCard(file) {
 		actionButtons += renderActionButton('Retry', iconSvg('restart'), 'restart-download', file.url, file.filename, 'action-button-strong')
 	else if (file.finished) {
 		actionButtons += renderActionButton('Reveal', iconSvg('folder'), 'open-location', file.url, file.filename)
-		actionButtons += renderActionButton('Play', iconSvg('play'), 'play-video', file.url, file.filename)
+		actionButtons += renderActionButton('Play', iconSvg('play'), 'play-video', file.url, file.filename, null, file.playUrl)
 	} else
 		actionButtons += renderActionButton('Stop', iconSvg('stop'), 'stop-download', file.url, file.filename)
 
@@ -249,7 +291,7 @@ function getActionButtonsMarkup(file) {
 		actionButtons += renderActionButton('Retry', iconSvg('restart'), 'restart-download', file.url, file.filename, 'action-button-strong')
 	else if (file.finished) {
 		actionButtons += renderActionButton('Reveal', iconSvg('folder'), 'open-location', file.url, file.filename)
-		actionButtons += renderActionButton('Play', iconSvg('play'), 'play-video', file.url, file.filename)
+		actionButtons += renderActionButton('Play', iconSvg('play'), 'play-video', file.url, file.filename, null, file.playUrl)
 	} else
 		actionButtons += renderActionButton('Stop', iconSvg('stop'), 'stop-download', file.url, file.filename)
 
@@ -371,6 +413,39 @@ function updateResultCount(count) {
 	$('#result-count').text(count + ' item' + (count === 1 ? '' : 's'))
 }
 
+function getRequestFailureMessage(err, fallbackMessage) {
+	const payload = parseJsonResponse((err || {}).responseText)
+	return payload.message || fallbackMessage || 'The action could not be completed.'
+}
+
+function showErrorDialog(title, copy) {
+	showDialog(title, copy, [
+		{
+			label: 'Close',
+			className: 'dialog-button-primary',
+			closeOnly: true
+		}
+	])
+}
+
+function getStremioUrl() {
+	return window.location.origin + '/web/app.strem.io/shell-v4.4/'
+}
+
+function openBrowserUrl(url, target) {
+	if (!url)
+		return false
+
+	const openedWindow = window.open(url, target || '_blank', 'noopener')
+	if (openedWindow)
+		openedWindow.opener = null
+	return !!openedWindow
+}
+
+function openStremio() {
+	openBrowserUrl(getStremioUrl(), '_blank')
+}
+
 function showDialog(title, copy, actions) {
 	dialog.classList.remove('dialog-large')
 	dialog.classList.remove('dialog-options')
@@ -383,7 +458,7 @@ function showDialog(title, copy, actions) {
 
 	actions.forEach(action => {
 		str += '' +
-			'<button type="button" class="dialog-button js-dialog-action ' + action.className + '"' +
+			'<button type="button" class="dialog-button js-dialog-action ' + (action.className || '') + '"' +
 				(action.method ? ' data-method="' + escapeAttribute(action.method) + '"' : '') +
 				(action.url ? ' data-url="' + escapeAttribute(action.url) + '"' : '') +
 				(action.filename ? ' data-filename="' + escapeAttribute(action.filename) + '"' : '') +
@@ -396,7 +471,8 @@ function showDialog(title, copy, actions) {
 	str += '</div>'
 
 	$('#dialog').html(str)
-	dialog.showModal()
+	if (!dialog.open)
+		dialog.showModal()
 	setTimeout(() => {
 		document.activeElement.blur()
 	})
@@ -438,7 +514,8 @@ function options() {
 				'<button type="button" class="dialog-button dialog-button-warning js-dialog-action" data-close-only="true">Close</button>' +
 			'</div>'
 		)
-		dialog.showModal()
+		if (!dialog.open)
+			dialog.showModal()
 		setTimeout(() => {
 			document.activeElement.blur()
 		})
@@ -529,6 +606,7 @@ let currentFiles = []
 let currentLogText = ''
 
 $(document).ready(() => {
+	window.name = 'stremio-downloader'
 	dialog = document.querySelector('dialog')
 
 	dialogPolyfill.registerDialog(dialog)
@@ -538,8 +616,8 @@ $(document).ready(() => {
 	})
 
 	$('#downloads').on('click', '.js-action', function () {
-		const { method, url, filename } = this.dataset
-		apiCall(method, url, filename)
+		const { method, url, filename, playUrl } = this.dataset
+		handleAction(method, url, filename, { playUrl })
 	})
 
 	$('#dialog').on('click', '.js-dialog-action', function () {
@@ -559,11 +637,11 @@ $(document).ready(() => {
 			})
 			return
 		}
-		apiCall(method, url, filename)
+		handleAction(method, url, filename)
 	})
 
 	$('#dialog').on('change', '#useShowSubfolders', function () {
-		$.get('/api?method=set-use-show-subfolders&enabled=' + encodeURIComponent(String(this.checked)))
+		request('set-use-show-subfolders', null, null, null, { enabled: String(this.checked) })
 	})
 
 	$('#dialog').on('input', '#logSearch', function () {
@@ -601,22 +679,92 @@ $(document).ready(() => {
 	checkEngine()
 })
 
-function apiCall(method, url, filename) {
+async function apiCall(method, url, filename) {
 	const previousFiles = cloneFiles(currentFiles)
 	const didOptimisticallyUpdate = applyOptimisticUpdate(method, url)
+	const normalizedFilename = decodeDisplayValue(filename)
 
 	if (didOptimisticallyUpdate)
 		renderDownloads()
 
-	request(method, url, decodeDisplayValue(filename), null).fail(() => {
-		if (!didOptimisticallyUpdate)
-			return
-		currentFiles = previousFiles
-		renderDownloads()
-	})
+	try {
+		await requestPromise(method, url, normalizedFilename)
+		if (method !== 'logs')
+			closeDialog()
+	} catch (err) {
+		if (didOptimisticallyUpdate) {
+			currentFiles = previousFiles
+			renderDownloads()
+		}
 
-	if (method !== 'logs')
-		closeDialog()
+		showErrorDialog('Action failed', getRequestFailureMessage(err))
+	}
+}
+
+async function handleChangeFolder() {
+	const result = await requestJson('change-folder')
+	if (result.done) {
+		options()
+		return
+	}
+
+	if (result.error === 'cancelled')
+		return
+
+	showErrorDialog('Download folder not changed', result.message || 'Could not open a native folder picker on this system.')
+}
+
+async function handleInstallAddon() {
+	const result = await requestJson('install-addon')
+	if (!result.url) {
+		showErrorDialog('Could not install add-on', 'The local service did not return a Stremio add-on URL.')
+		return
+	}
+
+	closeDialog()
+	window.location.assign(result.url)
+}
+
+async function handlePlay(fileUrl, filename, playUrl) {
+	if (playUrl) {
+		openBrowserUrl(playUrl, '_blank')
+		return
+	}
+
+	const result = await requestJson('play-video', fileUrl, decodeDisplayValue(filename))
+	if (!result.url)
+		throw new Error('The downloaded file is no longer available.')
+
+	openBrowserUrl(result.url, '_blank')
+}
+
+async function handleAction(method, url, filename, options) {
+	try {
+		if (method === 'load-stremio') {
+			openStremio()
+			return
+		}
+
+		if (method === 'change-folder') {
+			await handleChangeFolder()
+			return
+		}
+
+		if (method === 'install-addon') {
+			await handleInstallAddon()
+			return
+		}
+
+		if (method === 'play-video') {
+			await handlePlay(url, filename, (options || {}).playUrl)
+			closeDialog()
+			return
+		}
+
+		await apiCall(method, url, filename)
+	} catch (err) {
+		showErrorDialog('Action failed', getRequestFailureMessage(err, err.message))
+	}
 }
 
 function closeDialog() {

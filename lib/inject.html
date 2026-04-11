@@ -28,9 +28,8 @@
 
 	(function () {
 		$('#download-toast').click(() => {
-			let url = window.location.href
-			url = url.split('/web/')[0] + '/api?method=focus-window'
-			fetch(url)
+			const baseUrl = window.location.href.split('/web/')[0]
+			window.open(baseUrl + '/downloader/', 'stremio-downloader')
 		})
 
 		const css = '' +

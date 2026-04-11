@@ -1,11 +1,60 @@
 # Stremio Downloader
 
-This application allows downloading any stream from Stremio, it also features it's own Stremio add-on that allows you to view the downloaded content when you are offline.
+Stremio Downloader runs as a local Node service with a browser UI. It can download streams from Stremio and exposes its own Stremio add-on so downloaded content stays available offline.
 
-To use, first download the version for your operating system from [the downloads page](https://github.com/BurningSands70/stremio-downloader/releases).
+## Requirements
 
-After openning it for the first time, simply press "Load Stremio", navigate to the desired stream and press it, instead of playing it in Stremio, it will be downloaded with Stremio Downloader.
+- Node.js 18 or newer
+- `ffmpeg-static` is bundled through npm
+- To download torrents, the Stremio desktop app still needs to be running locally
 
-Note 1: You must log in to Stremio after pressing "Load Stremio", otherwise you will use an annonymous account that does not have your add-ons already installed.
+## Install
 
-Note 2: This downloader supports downloading anything, but in order to download torrents, you must also have the Stremio app running.
+```bash
+npm install
+```
+
+## Run
+
+```bash
+npm start
+```
+
+This starts the local server, prints the local URL, and opens the downloader in your default browser.
+
+If you do not want the browser to open automatically:
+
+```bash
+npm run start:no-open
+```
+
+## Usage
+
+1. Start the app with `npm start`.
+2. In the downloader UI, press `Load Stremio`.
+3. A separate browser tab opens with the proxied Stremio web app.
+4. Log in to Stremio if needed.
+5. Open the stream you want. Instead of playing normally, the downloader captures it and adds it to the local queue.
+
+The downloader UI stays available at the printed local URL and continues to show:
+
+- active download progress
+- finished / stopped / errored / missing-on-disk states
+- logs
+- retry, remove, reveal, and play actions
+- download folder management
+- add-on installation
+
+## Browser-based actions
+
+- `Play` opens the downloaded local file in a new browser tab through the local service.
+- `Reveal` opens the file location in Finder / Explorer / your desktop file manager.
+- `Open Download Folder` opens the configured download directory locally.
+- `Change Download Folder` uses a native folder picker from the local service.
+
+## Notes
+
+- You must log in after pressing `Load Stremio`, otherwise Stremio may use an anonymous session without your installed add-ons.
+- Auth cookies from the proxied Stremio session are now stored locally by the downloader service, so you should not need to log in again on every restart.
+- Direct web streams and debrid streams should work on their own.
+- Torrent downloads still require the Stremio desktop app and local torrent engine to be running.
