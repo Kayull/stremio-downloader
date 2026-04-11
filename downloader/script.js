@@ -81,9 +81,14 @@ function cloneFiles(files) {
 	return JSON.parse(JSON.stringify(files || []))
 }
 
+function normalizeThemeMode(value) {
+	return value === 'light' ? 'light' : 'dark'
+}
+
 const LIST_REFRESH_INTERVAL_MS = 500
 const desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1'
 const PENDING_ACTION_METHODS = ['remove-download', 'stop-download']
+const THEME_STORAGE_KEY = 'stremio-downloader-theme-mode'
 
 function formatExtension(filename) {
 	const decoded = decodeDisplayValue(filename)
@@ -212,6 +217,8 @@ function iconSvg(name) {
 	const icons = {
 		trash: '<svg viewBox="0 0 24 24" focusable="false"><path d="M19,6 L19,18.5 C19,19.8807119 17.8807119,21 16.5,21 L7.5,21 C6.11928813,21 5,19.8807119 5,18.5 L5,6 L4.5,6 C4.22385763,6 4,5.77614237 4,5.5 C4,5.22385763 4.22385763,5 4.5,5 L9,5 L9,4.5 C9,3.67157288 9.67157288,3 10.5,3 L13.5,3 C14.3284271,3 15,3.67157288 15,4.5 L15,5 L19.5,5 C19.7761424,5 20,5.22385763 20,5.5 C20,5.77614237 19.7761424,6 19.5,6 L19,6 Z M6,6 L6,18.5 C6,19.3284271 6.67157288,20 7.5,20 L16.5,20 C17.3284271,20 18,19.3284271 18,18.5 L18,6 L6,6 Z M14,5 L14,4.5 C14,4.22385763 13.7761424,4 13.5,4 L10.5,4 C10.2238576,4 10,4.22385763 10,4.5 L10,5 L14,5 Z M14,9.5 C14,9.22385763 14.2238576,9 14.5,9 C14.7761424,9 15,9.22385763 15,9.5 L15,16.5 C15,16.7761424 14.7761424,17 14.5,17 C14.2238576,17 14,16.7761424 14,16.5 L14,9.5 Z M9,9.5 C9,9.22385763 9.22385763,9 9.5,9 C9.77614237,9 10,9.22385763 10,9.5 L10,16.5 C10,16.7761424 9.77614237,17 9.5,17 C9.22385763,17 9,16.7761424 9,16.5 L9,9.5 Z"></path></svg>',
 		folder: '<svg viewBox="0 0 24 24" focusable="false"><path d="M21,8V19a1,1,0,0,1-1,1H4a1,1,0,0,1-1-1V5A1,1,0,0,1,4,4H9.59a1,1,0,0,1,.7.29l2.42,2.42a1,1,0,0,0,.7.29H20A1,1,0,0,1,21,8Z"></path></svg>',
+		moon: '<svg viewBox="0 0 24 24" focusable="false"><path d="M21.64,13a1,1,0,0,0-1.05-.14,8.05,8.05,0,0,1-3.37.73A8.15,8.15,0,0,1,9.08,5.49a8.59,8.59,0,0,1,.25-2A1,1,0,0,0,8,2.36,10.14,10.14,0,1,0,22,14.05,1,1,0,0,0,21.64,13Zm-9.5,6.69A8.14,8.14,0,0,1,7.08,5.22v.27A10.15,10.15,0,0,0,17.22,15.63a9.79,9.79,0,0,0,2.1-.22A8.11,8.11,0,0,1,12.14,19.73Z"></path></svg>',
+		sun: '<svg viewBox="0 0 24 24" focusable="false"><path d="M5.64,17l-.71.71a1,1,0,0,0,0,1.41,1,1,0,0,0,1.41,0l.71-.71A1,1,0,0,0,5.64,17ZM5,12a1,1,0,0,0-1-1H3a1,1,0,0,0,0,2H4A1,1,0,0,0,5,12Zm7-7a1,1,0,0,0,1-1V3a1,1,0,0,0-2,0V4A1,1,0,0,0,12,5ZM5.64,7.05a1,1,0,0,0,.7.29,1,1,0,0,0,.71-.29,1,1,0,0,0,0-1.41l-.71-.71A1,1,0,0,0,4.93,6.34Zm12,.29a1,1,0,0,0,.7-.29l.71-.71a1,1,0,1,0-1.41-1.41L17,5.64a1,1,0,0,0,0,1.41A1,1,0,0,0,17.66,7.34ZM21,11H20a1,1,0,0,0,0,2h1a1,1,0,0,0,0-2Zm-9,8a1,1,0,0,0-1,1v1a1,1,0,0,0,2,0V20A1,1,0,0,0,12,19ZM18.36,17A1,1,0,0,0,17,18.36l.71.71a1,1,0,0,0,1.41,0,1,1,0,0,0,0-1.41ZM12,6.5A5.5,5.5,0,1,0,17.5,12,5.51,5.51,0,0,0,12,6.5Zm0,9A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"></path></svg>',
 		play: '<svg viewBox="0 0 24 24" focusable="false"><path d="M8 5v14l11-7L8 5Z"></path></svg>',
 		stop: '<svg viewBox="0 0 24 24" focusable="false"><path d="M7 7h10v10H7V7Z"></path></svg>',
 		restart: '<svg viewBox="0 0 24 24" focusable="false"><path d="M17.91 14c-.478 2.833-2.943 5-5.91 5-3.308 0-6-2.692-6-6s2.692-6 6-6h2.172l-2.086 2.086L13.5 10.5 18 6l-4.5-4.5-1.414 1.414L14.172 5H12c-4.418 0-8 3.582-8 8s3.582 8 8 8c4.08 0 7.438-3.055 7.93-7h-2.02z"></path></svg>',
@@ -394,6 +401,76 @@ function renderEmptyState(message, detail) {
 			'</div>' +
 		'</div>'
 	)
+}
+
+function getStoredThemeMode() {
+	try {
+		const storedThemeMode = window.localStorage.getItem(THEME_STORAGE_KEY)
+		return storedThemeMode ? normalizeThemeMode(storedThemeMode) : null
+	} catch (err) {
+		return null
+	}
+}
+
+function setStoredThemeMode(mode) {
+	try {
+		window.localStorage.setItem(THEME_STORAGE_KEY, normalizeThemeMode(mode))
+	} catch (err) {}
+}
+
+function updateThemeToggle() {
+	const button = document.getElementById('theme-toggle')
+	if (!button)
+		return
+
+	const isDarkMode = currentThemeMode === 'dark'
+	button.setAttribute('aria-pressed', String(isDarkMode))
+	button.setAttribute('title', isDarkMode ? 'Switch to light mode' : 'Switch to dark mode')
+
+	const icon = button.querySelector('.theme-toggle-icon')
+	if (icon)
+		icon.innerHTML = iconSvg(isDarkMode ? 'sun' : 'moon')
+
+	const label = button.querySelector('.theme-toggle-label')
+	if (label)
+		label.textContent = isDarkMode ? 'Light mode' : 'Dark mode'
+}
+
+function applyTheme(mode) {
+	const nextThemeMode = normalizeThemeMode(mode)
+	currentThemeMode = nextThemeMode
+	document.body.dataset.theme = nextThemeMode
+	updateThemeToggle()
+}
+
+function getSettingsModel(settings) {
+	const model = settings && typeof settings === 'object' ? settings : {}
+	return {
+		folder: model.folder || 'Unavailable',
+		useShowSubfolders: model.useShowSubfolders !== false,
+		themeMode: normalizeThemeMode(model.themeMode)
+	}
+}
+
+async function loadAppSettings() {
+	const settings = getSettingsModel(await requestJson('download-settings'))
+	const storedThemeMode = getStoredThemeMode()
+	applyTheme(storedThemeMode || settings.themeMode)
+	return settings
+}
+
+async function persistThemeMode(mode) {
+	const nextThemeMode = normalizeThemeMode(mode)
+	setStoredThemeMode(nextThemeMode)
+
+	try {
+		const result = await requestJson('set-theme-mode', null, null, { mode: nextThemeMode })
+		const savedThemeMode = normalizeThemeMode(result.themeMode || nextThemeMode)
+		setStoredThemeMode(savedThemeMode)
+		return savedThemeMode
+	} catch (err) {
+		return nextThemeMode
+	}
 }
 
 function isPendingActionMethod(method) {
@@ -604,8 +681,9 @@ function options() {
 		try {
 			settings = JSON.parse(settingsResponse || '{}')
 		} catch (err) {}
-		const folder = settings.folder || 'Unavailable'
-		const useShowSubfolders = settings.useShowSubfolders !== false
+		const settingsModel = getSettingsModel(settings)
+		const folder = settingsModel.folder
+		const useShowSubfolders = settingsModel.useShowSubfolders
 		dialog.classList.remove('dialog-large')
 		dialog.classList.add('dialog-options')
 			$('#dialog').html('' +
@@ -707,6 +785,7 @@ let serverFiles = []
 let currentFiles = []
 let currentLogText = ''
 let pendingActions = []
+let currentThemeMode = 'dark'
 
 $(document).ready(() => {
 	window.name = 'stremio-downloader'
@@ -748,6 +827,12 @@ $(document).ready(() => {
 		request('set-use-show-subfolders', null, null, null, { enabled: String(this.checked) })
 	})
 
+	$('#theme-toggle').on('click', async () => {
+		const nextThemeMode = currentThemeMode === 'dark' ? 'light' : 'dark'
+		applyTheme(nextThemeMode)
+		applyTheme(await persistThemeMode(nextThemeMode))
+	})
+
 	$('#dialog').on('input', '#logSearch', function () {
 		renderLogViewer(this.value)
 	})
@@ -760,6 +845,12 @@ $(document).ready(() => {
 
 		setTimeout(update, LIST_REFRESH_INTERVAL_MS)
 	}
+
+	applyTheme(getStoredThemeMode() || 'dark')
+
+	loadAppSettings().catch(() => {
+		applyTheme(getStoredThemeMode() || 'dark')
+	})
 
 	update()
 
