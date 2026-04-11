@@ -11,11 +11,21 @@ function getNodeScriptPath(relativePath) {
 }
 
 function getTauriCommandPath() {
+	if (process.platform === 'win32') {
+		return path.join(
+			repoRoot,
+			'node_modules',
+			'@tauri-apps',
+			'cli',
+			'tauri.js'
+		)
+	}
+
 	return path.join(
 		repoRoot,
 		'node_modules',
 		'.bin',
-		process.platform === 'win32' ? 'tauri.cmd' : 'tauri'
+		'tauri'
 	)
 }
 
@@ -28,7 +38,18 @@ function runNodeScript(relativePath, extraArgs, env) {
 }
 
 function runTauriBuild(extraArgs, env) {
-	execFileSync(getTauriCommandPath(), ['build'].concat(extraArgs || []), {
+	const tauriArgs = ['build'].concat(extraArgs || [])
+
+	if (process.platform === 'win32') {
+		execFileSync(process.execPath, [getTauriCommandPath()].concat(tauriArgs), {
+			cwd: repoRoot,
+			stdio: 'inherit',
+			env: env || process.env
+		})
+		return
+	}
+
+	execFileSync(getTauriCommandPath(), tauriArgs, {
 		cwd: repoRoot,
 		stdio: 'inherit',
 		env: env || process.env
