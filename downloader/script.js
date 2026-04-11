@@ -182,8 +182,15 @@ function getStatusModel(file) {
 	if (file.stopped)
 		return { label: 'Stopped', className: 'status-stopped', detail: 'Download stopped.' }
 	if (file.isHls)
-		return { label: 'Capturing', className: 'status-downloading', detail: 'Recording an HLS stream.' }
-	return { label: 'Downloading', className: 'status-downloading', detail: clampProgress(file.progress) + '% complete.' }
+		return { label: 'Capturing', className: 'status-downloading', detail: '' }
+	return { label: 'Downloading', className: 'status-downloading', detail: '' }
+}
+
+function getProgressPillMarkup(file, progress) {
+	if (file.finished || file.error || file.stopped || file.missingOnDisk)
+		return ''
+
+	return '<span class="meta-pill progress-pill">' + escapeHtml(file.isHls ? 'Live HLS stream' : progress + '% complete') + '</span>'
 }
 
 function renderActionButton(label, icon, method, url, filename, accentClassName, playUrl) {
@@ -223,9 +230,7 @@ function fileToCard(file) {
 		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
 		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
 	]
-
-	if (!file.finished && !file.error && !file.stopped && !file.missingOnDisk)
-		metaPills.push('<span class="meta-pill">' + escapeHtml(file.isHls ? 'Live HLS stream' : progress + '% complete') + '</span>')
+	const progressPill = getProgressPillMarkup(file, progress)
 
 	let actionButtons = ''
 
@@ -248,8 +253,12 @@ function fileToCard(file) {
 				'</div>'
 		: ''
 
-	const statsRow = downloadStats.length
-		? '<div class="download-stats">' + downloadStats.map(stat => '<span class="download-stat">' + escapeHtml(stat) + '</span>').join('') + '</div>'
+	const statItems = []
+	if (progressPill)
+		statItems.push(progressPill)
+	statItems.push(...downloadStats.map(stat => '<span class="download-stat">' + escapeHtml(stat) + '</span>'))
+	const statsRow = statItems.length
+		? '<div class="download-stats">' + statItems.join('') + '</div>'
 		: ''
 
 	return '' +
@@ -259,9 +268,9 @@ function fileToCard(file) {
 					'<p class="download-subtitle">' + escapeHtml(status.detail) + '</p>' +
 					'<div class="download-meta">' + metaPills.join('') + '</div>' +
 					statsRow +
-					progressBar +
 				'</div>' +
 				'<div class="download-actions">' + actionButtons + '</div>' +
+				'<div class="download-progress-slot">' + progressBar + '</div>' +
 			'</article>'
 }
 
@@ -269,17 +278,12 @@ function getFileKey(file) {
 	return file.url || file.filename || String(file.time || '')
 }
 
-function getMetaPillsMarkup(file, status, sourceKind, displayName, progress) {
-	const metaPills = [
+function getMetaPillsMarkup(file, status, sourceKind, displayName) {
+	return [
 		'<span class="status-pill ' + status.className + '">' + escapeHtml(status.label) + '</span>',
 		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
 		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
-	]
-
-	if (!file.finished && !file.error && !file.stopped && !file.missingOnDisk)
-		metaPills.push('<span class="meta-pill">' + escapeHtml(file.isHls ? 'Live HLS stream' : progress + '% complete') + '</span>')
-
-	return metaPills.join('')
+	].join('')
 }
 
 function getActionButtonsMarkup(file) {
@@ -319,9 +323,9 @@ function createDownloadCardElement(file) {
 			'<p class="download-subtitle"></p>' +
 			'<div class="download-meta"></div>' +
 			'<div class="download-stats"></div>' +
-			'<div class="download-progress-slot"></div>' +
 		'</div>' +
-		'<div class="download-actions"></div>'
+		'<div class="download-actions"></div>' +
+		'<div class="download-progress-slot"></div>'
 	updateDownloadCardElement(card, file)
 	return card
 }
@@ -332,8 +336,13 @@ function updateDownloadCardElement(card, file) {
 	const displayName = decodeDisplayValue(file.filename)
 	const progress = clampProgress(file.progress)
 	const downloadStats = getDownloadStats(file)
-	const metaMarkup = getMetaPillsMarkup(file, status, sourceKind, displayName, progress)
-	const statsMarkup = downloadStats.map(stat => '<span class="download-stat">' + escapeHtml(stat) + '</span>').join('')
+	const metaMarkup = getMetaPillsMarkup(file, status, sourceKind, displayName)
+	const progressPill = getProgressPillMarkup(file, progress)
+	const statItems = []
+	if (progressPill)
+		statItems.push(progressPill)
+	statItems.push(...downloadStats.map(stat => '<span class="download-stat">' + escapeHtml(stat) + '</span>'))
+	const statsMarkup = statItems.join('')
 	const progressMarkup = getProgressMarkup(file, progress)
 	const actionMarkup = getActionButtonsMarkup(file)
 
