@@ -22,7 +22,7 @@ Once the app is open:
 - Rust toolchain plus Tauri's platform prerequisites for your OS
 - To download torrents, the Stremio desktop app still needs to be running locally. (Debrid links usually still work without this since they are mostly direct web-dl links)
 - Desktop app targets:
-  - macOS: universal `.app` for Apple Silicon and Intel Macs. Building with Tauri requires macOS Catalina (10.15) or later.
+  - macOS: universal `.dmg` for Apple Silicon and Intel Macs. Building with Tauri requires macOS Catalina (10.15) or later.
   - Windows: x64 build target. Windows 10 or Windows 11 is recommended.
   - Linux: x64 AppImage build target. Built on Ubuntu 22.04; intended for modern x64 Linux distros with a glibc-based userspace.
 

@@ -95,14 +95,17 @@ jobs:
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             platform_label: macos-universal
             archive_suffix: macos-universal
+            artifact_ext: dmg
           - runner: windows-latest
             tauri_target: x86_64-pc-windows-msvc
             rust_targets: x86_64-pc-windows-msvc
             platform_label: windows-x64
             archive_suffix: windows-x64
+            artifact_ext: zip
           - runner: ubuntu-22.04
             platform_label: linux-x64
             archive_suffix: linux-x64
+            artifact_ext: zip
     runs-on: ${{ matrix.runner }}
     env:
       DESKTOP_STRIP_BINARIES: '1'
@@ -209,17 +212,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "value=stremio-downloader-${{ needs.create-release.outputs.release_tag }}-${{ matrix.archive_suffix }}.zip" >> "$GITHUB_OUTPUT"
+          echo "value=stremio-downloader-${{ needs.create-release.outputs.release_tag }}-${{ matrix.archive_suffix }}.${{ matrix.artifact_ext }}" >> "$GITHUB_OUTPUT"
 
-      - name: Create macOS release zip
+      - name: Prepare macOS release DMG
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
           RELEASE_DIR="tauri/release/${{ steps.version.outputs.value }}-${{ matrix.platform_label }}"
-          ditto -c -k --sequesterRsrc --keepParent \
-            "${RELEASE_DIR}/Stremio Downloader.app" \
-            "tauri/release/${{ steps.archive.outputs.value }}"
+          DMG_SOURCE="$(find "${RELEASE_DIR}" -maxdepth 1 -type f -name '*.dmg' | head -n 1)"
+          if [ -z "${DMG_SOURCE}" ]; then
+            echo "No DMG artifact found in ${RELEASE_DIR}" >&2
+            exit 1
+          fi
+          mv "${DMG_SOURCE}" "tauri/release/${{ steps.archive.outputs.value }}"
 
       - name: Create Linux release zip
         if: runner.os == 'Linux'

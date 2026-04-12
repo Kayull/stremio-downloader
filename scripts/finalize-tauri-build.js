@@ -33,6 +33,23 @@ function getBundleRootCandidates() {
 	return candidates
 }
 
+function isFinalBundleArtifact(artifactPath) {
+	const artifactName = path.basename(artifactPath)
+
+	if (artifactName.endsWith('.app'))
+		return true
+
+	return [
+		'.dmg',
+		'.pkg',
+		'.msi',
+		'.exe',
+		'.AppImage',
+		'.deb',
+		'.rpm'
+	].some(extension => artifactName.endsWith(extension))
+}
+
 function listBundleArtifacts() {
 	const bundleRoot = getBundleRootCandidates().find(candidate => fs.existsSync(candidate))
 	if (!bundleRoot)
@@ -45,7 +62,9 @@ function listBundleArtifacts() {
 
 		const platformBundleDir = path.join(bundleRoot, entry.name)
 		fs.readdirSync(platformBundleDir, { withFileTypes: true }).forEach(artifactEntry => {
-			artifacts.push(path.join(platformBundleDir, artifactEntry.name))
+			const artifactPath = path.join(platformBundleDir, artifactEntry.name)
+			if (isFinalBundleArtifact(artifactPath))
+				artifacts.push(artifactPath)
 		})
 	})
 
