@@ -89,6 +89,7 @@ const LIST_REFRESH_INTERVAL_MS = 500
 const desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1'
 const PENDING_ACTION_METHODS = ['remove-download', 'stop-download']
 const THEME_STORAGE_KEY = 'stremio-downloader-theme-mode'
+let updatePromptShown = false
 
 function formatExtension(filename) {
 	const decoded = decodeDisplayValue(filename)
@@ -448,7 +449,8 @@ function getSettingsModel(settings) {
 	return {
 		folder: model.folder || 'Unavailable',
 		useShowSubfolders: model.useShowSubfolders !== false,
-		themeMode: normalizeThemeMode(model.themeMode)
+		themeMode: normalizeThemeMode(model.themeMode),
+		skippedReleaseVersion: String(model.skippedReleaseVersion || '').trim().replace(/^v/i, '')
 	}
 }
 
@@ -657,6 +659,7 @@ function showDialog(title, copy, actions) {
 		str += '' +
 			'<button type="button" class="dialog-button js-dialog-action ' + (action.className || '') + '"' +
 				(action.method ? ' data-method="' + escapeAttribute(action.method) + '"' : '') +
+				(action.externalUrl ? ' data-external-url="' + escapeAttribute(action.externalUrl) + '"' : '') +
 				(action.url ? ' data-url="' + escapeAttribute(action.url) + '"' : '') +
 				(action.filename ? ' data-filename="' + escapeAttribute(action.filename) + '"' : '') +
 				(action.closeOnly ? ' data-close-only="true"' : '') +
@@ -750,8 +753,69 @@ function showLogs() {
 			if (!wasOpen)
 				dialog.showModal()
 			renderLogViewer('')
-		})
+	})
+}
+
+async function openExternalUrl(url) {
+	if (!url)
+		return
+
+	if (desktopMode) {
+		const result = await requestJson('open-external-url', null, null, Object.assign({
+			targetUrl: url
+		}, getLaunchParams()))
+		if (!result.done)
+			throw new Error(result.message || 'Could not open the requested URL.')
+		return
 	}
+
+	if (!openBrowserUrl(url, '_blank'))
+		window.location.assign(url)
+}
+
+async function checkForAppUpdate() {
+	if (updatePromptShown)
+		return
+
+	const settings = await loadAppSettings().catch(() => getSettingsModel({}))
+	let releaseInfo = {}
+	try {
+		releaseInfo = await requestJson('release-info')
+	} catch (err) {
+		return
+	}
+
+	if (!releaseInfo.updateAvailable || !releaseInfo.latestVersion || !releaseInfo.releaseUrl)
+		return
+	if (settings.skippedReleaseVersion && settings.skippedReleaseVersion === String(releaseInfo.latestVersion || '').trim().replace(/^v/i, ''))
+		return
+
+	updatePromptShown = true
+	showDialog(
+		'Update available',
+		'A newer version of Stremio Downloader is available. You are running ' +
+			(releaseInfo.currentVersion || 'an older version') +
+			' and the latest release is ' + releaseInfo.latestVersion + '.',
+			[
+				{
+					label: 'Open Release',
+					externalUrl: releaseInfo.releaseUrl,
+					className: 'dialog-button-primary'
+				},
+				{
+					label: 'Skip this version',
+					method: 'skip-release-version',
+					url: releaseInfo.latestVersion,
+					className: 'dialog-button-secondary'
+				},
+				{
+					label: 'Later',
+					closeOnly: true,
+				className: 'dialog-button-secondary'
+			}
+		]
+	)
+}
 
 function includes(str, query) {
 	return decodeDisplayValue(str).split('.').join(' ').toLowerCase().includes((query || '').toLowerCase())
@@ -808,6 +872,14 @@ $(document).ready(() => {
 			closeDialog()
 			return
 		}
+		if (this.dataset.externalUrl) {
+			openExternalUrl(this.dataset.externalUrl).then(() => {
+				closeDialog()
+			}).catch(err => {
+				showErrorDialog('Could not open release page', getRequestFailureMessage(err, err.message))
+			})
+			return
+		}
 		const { method, url, filename } = this.dataset
 		if (method === 'show-logs') {
 			closeDialog()
@@ -851,6 +923,8 @@ $(document).ready(() => {
 	loadAppSettings().catch(() => {
 		applyTheme(getStoredThemeMode() || 'dark')
 	})
+
+	checkForAppUpdate()
 
 	update()
 
