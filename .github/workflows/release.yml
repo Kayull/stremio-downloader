@@ -73,14 +73,23 @@ jobs:
         if: steps.version.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "${{ steps.version.outputs.release_tag }}" >/dev/null 2>&1 || \
-            gh release create "${{ steps.version.outputs.release_tag }}" \
-              --target "${GITHUB_SHA}" \
-              --title "Stremio Downloader ${{ steps.version.outputs.release_tag }}" \
-              --generate-notes
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          payload="$(jq -n \
+            --arg tag "${RELEASE_TAG}" \
+            --arg target "${GITHUB_SHA}" \
+            --arg title "Stremio Downloader ${RELEASE_TAG}" \
+            '{tag_name:$tag,target_commitish:$target,name:$title,generate_release_notes:true,make_latest:"false"}')"
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases" \
+            --method POST \
+            --input - <<<"${payload}"
 
   build-and-upload:
     needs: create-release
@@ -256,3 +265,22 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "${{ needs.create-release.outputs.release_tag }}" "tauri/release/${{ steps.archive.outputs.value }}" --clobber
+
+  mark-release-latest:
+    needs:
+      - create-release
+      - build-and-upload
+    if: needs.create-release.outputs.should_release == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Mark release as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_ID="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id')"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            --method PATCH \
+            --input - <<< '{"make_latest":"true"}'
