@@ -7,3 +7,4 @@ tauri/binaries/
 tauri/cache/
 tauri/release/
 tauri/target/
+packaging/
