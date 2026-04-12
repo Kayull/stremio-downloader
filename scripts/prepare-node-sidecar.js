@@ -271,6 +271,17 @@ function clearTauriCopiedRuntimeArtifacts() {
 		return
 
 	fs.readdirSync(tauriTargetRoot).forEach(entry => {
+		const targetEntryPath = path.join(tauriTargetRoot, entry)
+		let stats
+		try {
+			stats = fs.statSync(targetEntryPath)
+		} catch (err) {
+			return
+		}
+
+		if (!stats.isDirectory())
+			return
+
 		const copiedBuildRoot = path.join(tauriTargetRoot, entry, '_up_', 'build')
 		fs.rmSync(path.join(copiedBuildRoot, 'desktop-runtime'), { recursive: true, force: true })
 		fs.rmSync(path.join(copiedBuildRoot, 'node-runtime'), { recursive: true, force: true })

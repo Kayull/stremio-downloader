@@ -91,20 +91,20 @@ jobs:
       matrix:
         include:
           - runner: macos-latest
-            target: universal-apple-darwin
+            tauri_target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             platform_label: macos-universal
             archive_suffix: macos-universal
           - runner: windows-latest
-            target: x86_64-pc-windows-msvc
+            tauri_target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
             platform_label: windows-x64
             archive_suffix: windows-x64
           - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
             platform_label: linux-x64
             archive_suffix: linux-x64
     runs-on: ${{ matrix.runner }}
     env:
-      TAURI_TARGET_TRIPLE: ${{ matrix.target }}
       DESKTOP_STRIP_BINARIES: '1'
     steps:
       - uses: actions/checkout@v4
@@ -116,14 +116,19 @@ jobs:
           cache: npm
 
       - name: Install Rust stable
+        if: matrix.rust_targets == ''
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust stable with targets
+        if: matrix.rust_targets != ''
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-${{ matrix.target }}
+          shared-key: release-${{ matrix.tauri_target || 'native' }}
           workspaces: |
             tauri -> target
 
@@ -183,7 +188,13 @@ jobs:
 
       - name: Build release bundle
         shell: bash
-        run: npm run tauri:build -- --target "${{ matrix.target }}"
+        run: |
+          set -euo pipefail
+          if [ -n "${{ matrix.tauri_target }}" ]; then
+            npm run tauri:build -- --target "${{ matrix.tauri_target }}"
+          else
+            npm run tauri:build
+          fi
 
       - name: Read version
         id: version
