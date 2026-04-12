@@ -1,0 +1,20 @@
+#!/bin/sh
+# stremio-downloader managed pre-commit hook
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACMR)"
+
+if printf '%s\n' "$STAGED_FILES" | grep -qx 'VERSION'; then
+	echo "VERSION changed; syncing version files."
+	node scripts/sync-version.js
+	node scripts/check-version-sync.js
+	git add VERSION package.json package-lock.json tauri/tauri.conf.json tauri/Cargo.toml
+fi
+
+if [ -x ".git/hooks/pre-commit.local" ]; then
+	".git/hooks/pre-commit.local" "$@"
+fi

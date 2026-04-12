@@ -3,6 +3,8 @@
   "version": "2.0.3",
   "scripts": {
     "version:sync": "node scripts/sync-version.js",
+    "version:check": "node scripts/check-version-sync.js",
+    "prepare": "node scripts/install-git-hooks.js",
     "start": "node scripts/start.js",
     "start:no-open": "node scripts/start.js --no-open",
     "desktop:stage-runtime": "node scripts/stage-desktop-runtime.js",
