@@ -86,6 +86,8 @@ function normalizeThemeMode(value) {
 }
 
 const LIST_REFRESH_INTERVAL_MS = 500
+const LOG_REFRESH_INTERVAL_MS = 1000
+const LOG_FOLLOW_BOTTOM_THRESHOLD_PX = 12
 const desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1'
 const PENDING_ACTION_METHODS = ['remove-download', 'stop-download']
 const THEME_STORAGE_KEY = 'stremio-downloader-theme-mode'
@@ -578,14 +580,21 @@ function removePendingAction(actionId) {
 	syncCurrentFiles()
 }
 
-function renderLogViewer(query) {
+function renderLogViewer(query, options) {
 	const logViewer = dialog.querySelector('.log-viewer')
 	const searchMeta = dialog.querySelector('.dialog-search-meta')
 	if (!logViewer)
 		return
 
+	options = options || {}
+	const normalizedQuery = String(query == null ? currentLogSearch : query).trim().toLowerCase()
+	const maxScrollTop = Math.max(0, logViewer.scrollHeight - logViewer.clientHeight)
+	const previousScrollTop = logViewer.scrollTop
+	const wasAtBottom = maxScrollTop - previousScrollTop <= LOG_FOLLOW_BOTTOM_THRESHOLD_PX
+
+	currentLogSearch = normalizedQuery
+
 	const lines = String(currentLogText || '').split('\n')
-	const normalizedQuery = (query || '').trim().toLowerCase()
 	const filteredLines = normalizedQuery
 		? lines.filter(line => line.toLowerCase().includes(normalizedQuery))
 		: lines
@@ -599,7 +608,17 @@ function renderLogViewer(query) {
 			? ('Showing ' + visibleLines.length + ' of ' + lines.filter(line => line.length > 0).length + ' lines')
 			: ''
 
-	logViewer.scrollTop = normalizedQuery ? 0 : logViewer.scrollHeight
+	if (options.scrollToTop) {
+		logViewer.scrollTop = 0
+		return
+	}
+
+	if (options.scrollToBottom || (!normalizedQuery && wasAtBottom)) {
+		logViewer.scrollTop = logViewer.scrollHeight
+		return
+	}
+
+	logViewer.scrollTop = Math.min(previousScrollTop, Math.max(0, logViewer.scrollHeight - logViewer.clientHeight))
 }
 
 function updateResultCount(count) {
@@ -646,6 +665,7 @@ function getLaunchParams() {
 }
 
 function showDialog(title, copy, actions) {
+	stopLogRefresh()
 	dialog.classList.remove('dialog-large')
 	dialog.classList.remove('dialog-options')
 	let str = '' +
@@ -679,6 +699,7 @@ function showDialog(title, copy, actions) {
 }
 
 function options() {
+	stopLogRefresh()
 	request('download-settings', null, null, settingsResponse => {
 		let settings = {}
 		try {
@@ -724,8 +745,10 @@ function options() {
 }
 
 function showLogs() {
+	stopLogRefresh()
 	request('logs', null, null, logs => {
 		currentLogText = String(logs || '').trim()
+		currentLogSearch = ''
 		dialog.classList.remove('dialog-options')
 		dialog.classList.add('dialog-large')
 		$('#dialog').html('' +
@@ -752,7 +775,54 @@ function showLogs() {
 			const wasOpen = dialog.open
 			if (!wasOpen)
 				dialog.showModal()
-			renderLogViewer('')
+			renderLogViewer('', { scrollToBottom: true })
+			scheduleLogRefresh()
+	})
+}
+
+function isLogViewerOpen() {
+	return !!(dialog && dialog.open && dialog.querySelector('.log-viewer'))
+}
+
+function stopLogRefresh() {
+	if (logRefreshTimer) {
+		clearTimeout(logRefreshTimer)
+		logRefreshTimer = null
+	}
+
+	if (logRefreshRequest) {
+		logRefreshRequest.abort()
+		logRefreshRequest = null
+	}
+}
+
+function scheduleLogRefresh() {
+	if (!isLogViewerOpen())
+		return
+
+	if (logRefreshTimer)
+		clearTimeout(logRefreshTimer)
+
+	logRefreshTimer = setTimeout(refreshLogs, LOG_REFRESH_INTERVAL_MS)
+}
+
+function refreshLogs() {
+	if (!isLogViewerOpen() || logRefreshRequest)
+		return
+
+	logRefreshRequest = request('logs', null, null, logs => {
+		const nextLogText = String(logs || '').trim()
+		if (nextLogText === currentLogText)
+			return
+
+		currentLogText = nextLogText
+		if (isLogViewerOpen())
+			renderLogViewer(currentLogSearch)
+	})
+
+	logRefreshRequest.always(() => {
+		logRefreshRequest = null
+		scheduleLogRefresh()
 	})
 }
 
@@ -848,8 +918,11 @@ let dialog
 let serverFiles = []
 let currentFiles = []
 let currentLogText = ''
+let currentLogSearch = ''
 let pendingActions = []
 let currentThemeMode = 'dark'
+let logRefreshTimer = null
+let logRefreshRequest = null
 
 $(document).ready(() => {
 	window.name = 'stremio-downloader'
@@ -906,7 +979,7 @@ $(document).ready(() => {
 	})
 
 	$('#dialog').on('input', '#logSearch', function () {
-		renderLogViewer(this.value)
+		renderLogViewer(this.value, { scrollToTop: true })
 	})
 
 	function update() {
@@ -1051,6 +1124,7 @@ async function handleAction(method, url, filename, options) {
 }
 
 function closeDialog() {
+	stopLogRefresh()
 	if (dialog)
 		dialog.classList.remove('dialog-large')
 	if (dialog)
