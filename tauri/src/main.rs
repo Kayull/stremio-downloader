@@ -94,7 +94,7 @@ fn resource_script_path(app: &AppHandle) -> io::Result<String> {
     )))
 }
 
-fn wait_for_healthcheck(base_url: &str) -> io::Result<()> {
+fn wait_for_healthcheck(base_url: &str, downloader_url: &str) -> io::Result<()> {
     let client = Client::builder()
         .timeout(Duration::from_millis(800))
         .build()
@@ -108,16 +108,29 @@ fn wait_for_healthcheck(base_url: &str) -> io::Result<()> {
         "{}/api?method=download-settings",
         base_url.trim_end_matches('/')
     );
+    let downloader_healthcheck_url = downloader_url.to_string();
 
     loop {
-        match client.get(&healthcheck_url).send() {
-            Ok(response) if response.status().is_success() => return Ok(()),
-            Ok(_) | Err(_) => {}
+        let api_ready = client
+            .get(&healthcheck_url)
+            .send()
+            .map(|response| response.status().is_success())
+            .unwrap_or(false);
+        let ui_ready = client
+            .get(&downloader_healthcheck_url)
+            .send()
+            .and_then(|response| response.error_for_status())
+            .and_then(|response| response.text())
+            .map(|body| body.contains("Stremio Downloader"))
+            .unwrap_or(false);
+
+        if api_ready && ui_ready {
+            return Ok(());
         }
 
         if Instant::now() >= deadline {
             return Err(io_error(format!(
-                "Timed out waiting for the local downloader service at {healthcheck_url}"
+                "Timed out waiting for the local downloader service at {healthcheck_url} and {downloader_healthcheck_url}"
             )));
         }
 
@@ -284,7 +297,7 @@ fn start_sidecar(app: &AppHandle) -> io::Result<ReadyPayload> {
         StartupMessage::Error(message) => return Err(io_error(message)),
     };
 
-    wait_for_healthcheck(&ready.base_url)?;
+    wait_for_healthcheck(&ready.base_url, &ready.downloader_url)?;
     if ready.already_running {
         eprintln!(
             "Using existing local downloader service at {}",
