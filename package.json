@@ -1,6 +1,6 @@
 {
   "name": "stremio-downloader",
-  "version": "2.0.1",
+  "version": "2.0.3",
   "scripts": {
     "version:sync": "node scripts/sync-version.js",
     "start": "node scripts/start.js",
