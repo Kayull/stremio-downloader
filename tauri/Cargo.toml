@@ -1,6 +1,6 @@
 [package]
 name = "stremio-downloader-desktop"
-version = "2.1.0"
+version = "2.1.1"
 description = "Stremio Downloader desktop shell"
 authors = ["Kyle"]
 edition = "2021"
