@@ -110,7 +110,7 @@ jobs:
             rust_targets: x86_64-pc-windows-msvc
             platform_label: windows-x64
             archive_suffix: windows-x64
-            artifact_ext: zip
+            artifact_ext: exe
           - runner: ubuntu-22.04
             platform_label: linux-x64
             archive_suffix: linux-x64
@@ -163,6 +163,12 @@ jobs:
       - name: Install npm dependencies
         shell: bash
         run: npm ci
+
+      - name: Setup .NET SDK
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Resolve Node version
         id: node-version
@@ -247,16 +253,20 @@ jobs:
             zip -r "../${{ steps.archive.outputs.value }}" .
           )
 
-      - name: Create Windows release zip
+      - name: Prepare Windows release executable
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $releaseDir = "tauri/release/${{ steps.version.outputs.value }}-${{ matrix.platform_label }}"
-          $archivePath = "tauri/release/${{ steps.archive.outputs.value }}"
-          if (Test-Path $archivePath) {
-            Remove-Item $archivePath -Force
+          $releaseAsset = "tauri/release/${{ steps.archive.outputs.value }}"
+          if (Test-Path $releaseAsset) {
+            Remove-Item $releaseAsset -Force
           }
-          Compress-Archive -Path "$releaseDir\*" -DestinationPath $archivePath
+          $releaseExe = Get-ChildItem -Path $releaseDir -Filter *.exe | Select-Object -First 1
+          if (-not $releaseExe) {
+            Write-Error "No Windows release executable found in $releaseDir"
+          }
+          Move-Item $releaseExe.FullName $releaseAsset
 
       - name: Upload release asset
         env:

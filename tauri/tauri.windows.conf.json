@@ -1,7 +1,5 @@
 {
   "bundle": {
-    "targets": [
-      "nsis"
-    ]
+    "active": false
   }
 }

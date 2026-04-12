@@ -178,6 +178,7 @@ function run() {
 	try {
 		runTauriBuild(buildArgs, env)
 		runNodeScript('scripts/finalize-tauri-build.js', [], env)
+		runNodeScript('scripts/package-windows-release.js', [], env)
 	} finally {
 		cleanupGeneratedArtifacts()
 	}
