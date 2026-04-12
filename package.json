@@ -5,14 +5,12 @@
     "version:sync": "node scripts/sync-version.js",
     "version:check": "node scripts/check-version-sync.js",
     "prepare": "node scripts/install-git-hooks.js",
-    "start": "node scripts/start.js",
-    "start:no-open": "node scripts/start.js --no-open",
     "desktop:stage-runtime": "node scripts/stage-desktop-runtime.js",
     "desktop:prepare-node": "node scripts/prepare-node-sidecar.js",
     "desktop:prepare": "npm run version:sync && npm run desktop:stage-runtime && npm run desktop:prepare-node",
     "clean:generated": "node scripts/cleanup-generated.js",
-    "tauri:dev": "npm run desktop:prepare && node scripts/sanitize-tauri-target-cache.js && tauri dev",
-    "tauri:build": "node scripts/run-tauri-build.js"
+    "dev": "npm run desktop:prepare && node scripts/sanitize-tauri-target-cache.js && tauri dev",
+    "build": "node scripts/run-tauri-build.js"
   },
   "dependencies": {
     "async": "3.2.6",
