@@ -1,6 +1,7 @@
 # Stremio Downloader
 
-Stremio Downloader is a desktop app built with Tauri. It downloads streams from Stremio and exposes its own Stremio add-on so downloaded content stays on Stremio itself.
+
+This project is an actively maintained fork of [BurningSands70/stremio-downloader](https://github.com/BurningSands70/stremio-downloader). If you run into bugs feel free to open an issue.
 
 ## Usage
 
