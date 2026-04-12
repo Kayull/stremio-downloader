@@ -1,23 +1,167 @@
 <script>
-let oldFetch = fetch
-function newFetch() {
-   const url = arguments[0] || ''
-   if (url.includes('/meta/') && url.endsWith('.json'))
-       return new Promise(async (resolve, reject) => {
-           (oldFetch.apply(this, arguments)).then(async (resp) => {
-               if (resp.status == 200) {
-                   const body = await resp.clone().text()
-                   if ((body || '').length > 2)
-                       window.lastMetaUrl = url
-               }
-               resolve(resp)
-           }).catch((err) => {
-               reject(err)
-           })
-       })
-   else
-       return oldFetch.apply(this, arguments)
-}
-fetch = newFetch
-window.fetch = newFetch
+;(function () {
+	const PERSIST_DELAY_MS = 400
+	let persistTimer = null
+
+	function getBaseUrl() {
+		return window.location.href.split('/web/')[0]
+	}
+
+	function isStremioShell() {
+		return window.location.pathname.indexOf('/web/app.strem.io/') === 0
+	}
+
+	function parseStoragePayload(text) {
+		try {
+			return JSON.parse(text || '{}') || {}
+		} catch (err) {
+			return {}
+		}
+	}
+
+	function replaceStorageArea(storageArea, nextValues) {
+		if (!storageArea)
+			return
+
+		try {
+			storageArea.clear()
+		} catch (err) {}
+
+		Object.entries(nextValues || {}).forEach(function ([key, value]) {
+			try {
+				storageArea.setItem(String(key), String(value == null ? '' : value))
+			} catch (err) {}
+		})
+	}
+
+	function snapshotStorageArea(storageArea) {
+		const values = {}
+		if (!storageArea)
+			return values
+
+		for (let index = 0; index < storageArea.length; index++) {
+			const key = storageArea.key(index)
+			if (key == null)
+				continue
+
+			try {
+				values[key] = storageArea.getItem(key)
+			} catch (err) {}
+		}
+
+		return values
+	}
+
+	function restorePersistedShellStorage() {
+		if (!isStremioShell())
+			return
+
+		try {
+			const request = new XMLHttpRequest()
+			request.open('GET', getBaseUrl() + '/api?method=shell-storage', false)
+			request.send(null)
+
+			if (request.status < 200 || request.status >= 300)
+				return
+
+			const payload = parseStoragePayload(request.responseText)
+			replaceStorageArea(window.localStorage, payload.localStorage)
+			replaceStorageArea(window.sessionStorage, payload.sessionStorage)
+		} catch (err) {}
+	}
+
+	function persistShellStorage() {
+		if (!isStremioShell())
+			return
+
+		try {
+			const request = new XMLHttpRequest()
+			request.open('POST', getBaseUrl() + '/api?method=shell-storage', true)
+			request.setRequestHeader('Content-Type', 'application/json; charset=utf-8')
+			request.send(JSON.stringify({
+				localStorage: snapshotStorageArea(window.localStorage),
+				sessionStorage: snapshotStorageArea(window.sessionStorage)
+			}))
+		} catch (err) {}
+	}
+
+	function schedulePersistShellStorage() {
+		if (!isStremioShell())
+			return
+
+		clearTimeout(persistTimer)
+		persistTimer = setTimeout(function () {
+			persistTimer = null
+			persistShellStorage()
+		}, PERSIST_DELAY_MS)
+	}
+
+	function wrapStorageArea(storageArea) {
+		if (!storageArea || storageArea.__stremioDownloaderWrapped)
+			return
+
+		const originalSetItem = storageArea.setItem.bind(storageArea)
+		const originalRemoveItem = storageArea.removeItem.bind(storageArea)
+		const originalClear = storageArea.clear.bind(storageArea)
+
+		storageArea.setItem = function () {
+			const result = originalSetItem.apply(this, arguments)
+			schedulePersistShellStorage()
+			return result
+		}
+
+		storageArea.removeItem = function () {
+			const result = originalRemoveItem.apply(this, arguments)
+			schedulePersistShellStorage()
+			return result
+		}
+
+		storageArea.clear = function () {
+			const result = originalClear.apply(this, arguments)
+			schedulePersistShellStorage()
+			return result
+		}
+
+		storageArea.__stremioDownloaderWrapped = true
+	}
+
+	restorePersistedShellStorage()
+	wrapStorageArea(window.localStorage)
+	wrapStorageArea(window.sessionStorage)
+
+	window.addEventListener('pagehide', function () {
+		clearTimeout(persistTimer)
+		persistTimer = null
+		persistShellStorage()
+	})
+	document.addEventListener('visibilitychange', function () {
+		if (document.visibilityState === 'hidden') {
+			clearTimeout(persistTimer)
+			persistTimer = null
+			persistShellStorage()
+		}
+	})
+
+	let oldFetch = fetch
+	function newFetch() {
+		const url = arguments[0] || ''
+		if (url.includes('/meta/') && url.endsWith('.json'))
+			return new Promise(async (resolve, reject) => {
+				(oldFetch.apply(this, arguments)).then(async resp => {
+					if (resp.status == 200) {
+						const body = await resp.clone().text()
+						if ((body || '').length > 2)
+							window.lastMetaUrl = url
+					}
+					resolve(resp)
+				}).catch(err => {
+					reject(err)
+				})
+			})
+		else
+			return oldFetch.apply(this, arguments)
+	}
+	fetch = newFetch
+	window.fetch = newFetch
+}())
 </script>
