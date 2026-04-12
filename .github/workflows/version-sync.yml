@@ -1,0 +1,41 @@
+name: Version Sync
+
+on:
+  push:
+    paths:
+      - 'VERSION'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tauri/tauri.conf.json'
+      - 'tauri/Cargo.toml'
+      - 'scripts/check-version-sync.js'
+      - 'scripts/sync-version.js'
+      - 'scripts/install-git-hooks.js'
+      - 'scripts/git-hooks/pre-commit'
+      - '.github/workflows/version-sync.yml'
+  pull_request:
+    paths:
+      - 'VERSION'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tauri/tauri.conf.json'
+      - 'tauri/Cargo.toml'
+      - 'scripts/check-version-sync.js'
+      - 'scripts/sync-version.js'
+      - 'scripts/install-git-hooks.js'
+      - 'scripts/git-hooks/pre-commit'
+      - '.github/workflows/version-sync.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify version files are in sync
+        run: node scripts/check-version-sync.js
