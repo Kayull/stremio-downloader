@@ -110,10 +110,6 @@ jobs:
             rust_targets: x86_64-pc-windows-msvc
             platform_label: windows-x64
             archive_suffix: windows-x64
-            artifact_ext: exe
-          - runner: ubuntu-22.04
-            platform_label: linux-x64
-            archive_suffix: linux-x64
             artifact_ext: zip
     runs-on: ${{ matrix.runner }}
     env:
@@ -144,31 +140,9 @@ jobs:
           workspaces: |
             tauri -> target
 
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libxdo-dev \
-            libssl-dev \
-            patchelf \
-            zip
-
       - name: Install npm dependencies
         shell: bash
         run: npm ci
-
-      - name: Setup .NET SDK
-        if: runner.os == 'Windows'
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
 
       - name: Resolve Node version
         id: node-version
@@ -242,18 +216,7 @@ jobs:
           fi
           mv "${DMG_SOURCE}" "tauri/release/${{ steps.archive.outputs.value }}"
 
-      - name: Create Linux release zip
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          RELEASE_DIR="tauri/release/${{ steps.version.outputs.value }}-${{ matrix.platform_label }}"
-          (
-            cd "${RELEASE_DIR}"
-            zip -r "../${{ steps.archive.outputs.value }}" .
-          )
-
-      - name: Prepare Windows release executable
+      - name: Prepare Windows release zip
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -262,11 +225,11 @@ jobs:
           if (Test-Path $releaseAsset) {
             Remove-Item $releaseAsset -Force
           }
-          $releaseExe = Get-ChildItem -Path $releaseDir -Filter *.exe | Select-Object -First 1
-          if (-not $releaseExe) {
-            Write-Error "No Windows release executable found in $releaseDir"
+          $releaseZip = "$releaseDir.zip"
+          if (-not (Test-Path $releaseZip)) {
+            Write-Error "No Windows release zip found at $releaseZip"
           }
-          Move-Item $releaseExe.FullName $releaseAsset
+          Move-Item $releaseZip $releaseAsset
 
       - name: Upload release asset
         env:
