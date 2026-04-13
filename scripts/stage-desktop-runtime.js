@@ -13,10 +13,33 @@ const runtimeEntries = [
 	'scripts/desktop-sidecar.js'
 ]
 
-function getNpmCommand() {
-	return process.platform === 'win32'
-		? 'npm.cmd'
-		: 'npm'
+function getNpmInvocation() {
+	const npmExecPath = process.env.npm_execpath
+	if (npmExecPath && fs.existsSync(npmExecPath)) {
+		return {
+			command: process.execPath,
+			args: [npmExecPath]
+		}
+	}
+
+	const bundledNpmCliPath = path.join(
+		path.dirname(process.execPath),
+		'node_modules',
+		'npm',
+		'bin',
+		'npm-cli.js'
+	)
+	if (fs.existsSync(bundledNpmCliPath)) {
+		return {
+			command: process.execPath,
+			args: [bundledNpmCliPath]
+		}
+	}
+
+	return {
+		command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+		args: []
+	}
 }
 
 function ensureInstalledDependencies() {
@@ -51,9 +74,11 @@ function getTopLevelPackagePath(relativePath) {
 
 function listProductionTopLevelPackages() {
 	let output = ''
+	const npmInvocation = getNpmInvocation()
+	const npmArgs = npmInvocation.args.concat(['ls', '--omit=dev', '--parseable', '--all'])
 
 	try {
-		output = execFileSync(getNpmCommand(), ['ls', '--omit=dev', '--parseable', '--all'], {
+		output = execFileSync(npmInvocation.command, npmArgs, {
 			cwd: repoRoot,
 			encoding: 'utf8',
 			stdio: ['ignore', 'pipe', 'pipe']

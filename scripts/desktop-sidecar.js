@@ -3,8 +3,20 @@ const logger = require('../lib/logger')
 
 const PARENT_WATCH_INTERVAL_MS = 2000
 
+function isProcessAlive(pid) {
+	if (!Number.isInteger(pid) || pid <= 0)
+		return false
+
+	try {
+		process.kill(pid, 0)
+		return true
+	} catch (err) {
+		return err && err.code === 'EPERM'
+	}
+}
+
 function startParentWatch(appRuntime) {
-	const expectedParentPid = Number(process.ppid)
+	const expectedParentPid = Number(process.env.STREMIO_DOWNLOADER_PARENT_PID || process.ppid)
 	if (!Number.isInteger(expectedParentPid) || expectedParentPid <= 1)
 		return
 
@@ -12,13 +24,11 @@ function startParentWatch(appRuntime) {
 		if (appRuntime.isShuttingDown())
 			return
 
-		const currentParentPid = Number(process.ppid)
-		if (currentParentPid === expectedParentPid)
+		if (isProcessAlive(expectedParentPid))
 			return
 
-		logger.warn('Desktop sidecar lost parent process; shutting down', {
-			expectedParentPid,
-			currentParentPid
+		logger.warn('Desktop sidecar lost desktop app process; shutting down', {
+			expectedParentPid
 		})
 		appRuntime.shutdown(0, 'parent_process_gone')
 	}, PARENT_WATCH_INTERVAL_MS)

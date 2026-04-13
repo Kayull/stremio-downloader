@@ -9,7 +9,7 @@
     "desktop:prepare-node": "node scripts/prepare-node-sidecar.js",
     "desktop:prepare": "npm run version:sync && npm run desktop:stage-runtime && npm run desktop:prepare-node",
     "clean:generated": "node scripts/cleanup-generated.js",
-    "dev": "npm run desktop:prepare && node scripts/sanitize-tauri-target-cache.js && tauri dev",
+    "dev": "npm run desktop:prepare && node scripts/run-tauri-dev.js",
     "build": "node scripts/run-tauri-build.js"
   },
   "dependencies": {

@@ -369,6 +369,10 @@ button {
   box-shadow: var(--shadow-soft);
 }
 
+.notice-card.is-visible {
+  display: block;
+}
+
 .notice-title {
   margin-bottom: 3px;
   font-size: 14px;
@@ -379,6 +383,25 @@ button {
   color: inherit;
   font-size: 13px;
   line-height: 1.4;
+}
+
+.notice-button {
+  margin-top: 10px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: rgba(47, 116, 255, 0.12);
+  color: var(--primary-strong);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.notice-button:hover {
+  transform: translateY(-1px);
+  background: rgba(47, 116, 255, 0.18);
 }
 
 .notice-warning {

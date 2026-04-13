@@ -2,6 +2,7 @@
 
 use std::io;
 use std::path::PathBuf;
+use std::process;
 use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -77,10 +78,10 @@ fn desktop_runtime_candidates(app: &AppHandle) -> io::Result<Vec<PathBuf>> {
     Ok(candidates)
 }
 
-fn resource_script_path(app: &AppHandle) -> io::Result<String> {
+fn resource_script_path(app: &AppHandle) -> io::Result<PathBuf> {
     let candidates = desktop_runtime_candidates(app)?;
     if let Some(script_path) = candidates.iter().find(|candidate| candidate.exists()) {
-        return Ok(script_path.to_string_lossy().into_owned());
+        return Ok(script_path.to_path_buf());
     }
 
     let attempted_paths = candidates
@@ -229,12 +230,39 @@ fn create_main_window(app: &AppHandle, ready: &ReadyPayload) -> io::Result<()> {
 
 fn start_sidecar(app: &AppHandle) -> io::Result<ReadyPayload> {
     let script_path = resource_script_path(app)?;
+    let script_dir = script_path
+        .parent()
+        .ok_or_else(|| io_error("Desktop runtime script path has no parent directory."))?;
+    let script_name = script_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| io_error("Desktop runtime script path has no valid file name."))?;
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|err| io_error(format!("Could not resolve app resource directory: {err}")))?;
+    let app_exe_dir = std::env::current_exe()
+        .map_err(|err| io_error(format!("Could not resolve desktop executable path: {err}")))?
+        .parent()
+        .ok_or_else(|| io_error("Desktop executable path has no parent directory."))?
+        .to_path_buf();
+    let app_pid = process::id().to_string();
     let sidecar = app
         .shell()
         .sidecar("node-launcher")
         .map_err(|err| io_error(format!("Could not resolve the bundled Node sidecar: {err}")))?;
     let (mut rx, child) = sidecar
-        .args([script_path])
+        .env("STREMIO_DOWNLOADER_PARENT_PID", &app_pid)
+        .env(
+            "STREMIO_DOWNLOADER_RESOURCE_DIR",
+            resource_dir.as_os_str(),
+        )
+        .env(
+            "STREMIO_DOWNLOADER_APP_EXE_DIR",
+            app_exe_dir.as_os_str(),
+        )
+        .current_dir(script_dir)
+        .args([script_name])
         .spawn()
         .map_err(|err| io_error(format!("Could not spawn the bundled Node sidecar: {err}")))?;
 

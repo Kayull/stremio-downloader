@@ -7,6 +7,8 @@ This project is an actively maintained fork of [BurningSands70/stremio-downloade
 
 Download the latest release for your platform from the [Releases page](../../releases/latest), then open the app.
 
+On Windows, extract the downloaded `.zip` first, then launch the `.exe` from the extracted folder.
+
 Once the app is open:
 
 1. Press `Load Stremio`.
@@ -20,11 +22,12 @@ Once the app is open:
 
 - Node.js 18 or newer
 - Rust toolchain plus Tauri's platform prerequisites for your OS
-- On Windows, `npm run build` also requires the .NET 8 SDK or newer to produce the single-file self-extracting `.exe`.
+- `cargo` must be available on `PATH`. The recommended install is via `rustup` from `https://rustup.rs/`.
+- After installing Rust on Windows, restart your shell so `%USERPROFILE%\.cargo\bin` is picked up.
 - To download torrents, the Stremio desktop app still needs to be running locally. (Debrid links usually still work without this since they are mostly direct web-dl links)
 - Desktop app targets:
   - macOS: universal `.dmg` for Apple Silicon and Intel Macs. Building with Tauri requires macOS Catalina (10.15) or later.
-  - Windows: a single self-extracting x64 `.exe` release asset. Windows 10 or Windows 11 is recommended.
+  - Windows: a zipped portable x64 app folder containing the main `.exe` plus its support files. Windows 10 or Windows 11 is recommended.
   - Linux: x64 AppImage build target. Built on Ubuntu 22.04; intended for modern x64 Linux distros with a glibc-based userspace.
 
 ### Install
@@ -48,6 +51,7 @@ npm run build
 ```
 
 On macOS, `npm run build` defaults to a universal build unless you pass an explicit `--target ...`. 
+If the build reports that `cargo` was not found, install Rust via `rustup`, reopen your terminal, and confirm `cargo --version` works before retrying.
 
 `npm run build` does the following:
 
@@ -60,7 +64,11 @@ On macOS, `npm run build` defaults to a universal build unless you pass an expli
 tauri/release/<version>-<platform>/
 ```
 
-On Windows, `npm run build` produces a single self-extracting `.exe` inside the release folder.
+On Windows, `npm run build` keeps the portable app folder in that location and also creates a sibling zip archive:
+
+```bash
+tauri/release/<version>-<platform>.zip
+```
 
 5. Deletes temporary staging output such as `build/` and `tauri/binaries/`.
 
@@ -91,5 +99,4 @@ The source of truth for the app version is the root `VERSION` file. Build script
 
 ## Notes
 
-- You must log in after pressing `Load Stremio`, otherwise Stremio may use an anonymous session without your installed add-ons.
-- Auth cookies from the proxied Stremio session are stored locally by the downloader service, so you should not need to log in again on every restart.
+- You might need to log in after pressing `Load Stremio`, otherwise Stremio may use an anonymous session without your installed add-ons.

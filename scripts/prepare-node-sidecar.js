@@ -87,6 +87,19 @@ function copyFile(sourcePath, targetPath, executable) {
 	fs.chmodSync(targetPath, executable ? 0o755 : 0o644)
 }
 
+function copyLauncherFile(sourcePath, targetPath) {
+	try {
+		copyFile(sourcePath, targetPath, true)
+	} catch (err) {
+		const isWindowsLockError = process.platform === 'win32' && ['EBUSY', 'EACCES', 'EPERM'].includes(err.code)
+		if (isWindowsLockError && fs.existsSync(targetPath)) {
+			console.warn('Tauri launcher sidecar is locked by a running process; reusing existing file:', targetPath)
+			return
+		}
+		throw err
+	}
+}
+
 function copyDirectoryIfPresent(sourcePath, targetPath) {
 	if (!fs.existsSync(sourcePath))
 		return false
@@ -213,7 +226,7 @@ function prepareLauncher(requestedTargetTriple, targetTriples, nodeBinaryName, l
 	fs.mkdirSync(binariesDir, { recursive: true })
 	if (process.platform === 'win32') {
 		const sourceNodeBinaryPath = path.join(nodeRuntimeRoot, resolvedLauncherTargetTriple, 'bin', nodeBinaryName)
-		copyFile(sourceNodeBinaryPath, launcherPath, true)
+		copyLauncherFile(sourceNodeBinaryPath, launcherPath)
 		return launcherPath
 	}
 

@@ -448,16 +448,32 @@ function applyTheme(mode) {
 
 function getSettingsModel(settings) {
 	const model = settings && typeof settings === 'object' ? settings : {}
+	const folder = typeof model.folder === 'string' ? model.folder.trim() : ''
 	return {
-		folder: model.folder || 'Unavailable',
+		folder,
+		hasFolder: model.hasFolder !== false && !!folder,
 		useShowSubfolders: model.useShowSubfolders !== false,
 		themeMode: normalizeThemeMode(model.themeMode),
 		skippedReleaseVersion: String(model.skippedReleaseVersion || '').trim().replace(/^v/i, '')
 	}
 }
 
+function updateDownloadFolderNotice(settings) {
+	const notice = document.getElementById('no-download-folder')
+	if (!notice)
+		return
+
+	if (settings && settings.hasFolder) {
+		notice.classList.remove('is-visible')
+		return
+	}
+
+	notice.classList.add('is-visible')
+}
+
 async function loadAppSettings() {
 	const settings = getSettingsModel(await requestJson('download-settings'))
+	updateDownloadFolderNotice(settings)
 	const storedThemeMode = getStoredThemeMode()
 	applyTheme(storedThemeMode || settings.themeMode)
 	return settings
@@ -717,7 +733,7 @@ function options() {
 				'</div>' +
 				'<div class="dialog-info-card">' +
 					'<span class="dialog-info-label">Download Folder</span>' +
-					'<code class="dialog-info-value">' + escapeHtml(folder || 'Unavailable') + '</code>' +
+					'<code class="dialog-info-value">' + escapeHtml(folder || 'Not set') + '</code>' +
 				'</div>' +
 				'<label class="dialog-toggle-card">' +
 					'<span class="dialog-toggle-copy">' +
@@ -923,6 +939,7 @@ let pendingActions = []
 let currentThemeMode = 'dark'
 let logRefreshTimer = null
 let logRefreshRequest = null
+let engineStatusTimer = null
 
 $(document).ready(() => {
 	window.name = 'stremio-downloader'
@@ -978,6 +995,10 @@ $(document).ready(() => {
 		applyTheme(await persistThemeMode(nextThemeMode))
 	})
 
+	$('#configure-download-folder').on('click', async () => {
+		await handleChangeFolder()
+	})
+
 	$('#dialog').on('input', '#logSearch', function () {
 		renderLogViewer(this.value, { scrollToTop: true })
 	})
@@ -1000,26 +1021,32 @@ $(document).ready(() => {
 	checkForAppUpdate()
 
 	update()
-
-	function checkEngine() {
-		$.ajax({
-			url: 'http://127.0.0.1:11470/settings',
-			type: 'GET',
-			success: () => {
-				if ($('#no-engine').css('display') == 'block')
-					$('#no-engine').css('display', 'none')
-			},
-			error: () => {
-				if ($('#no-engine').css('display') == 'none')
-					$('#no-engine').fadeIn()
-			}
-		})
-
-		setTimeout(checkEngine, 5000)
-	}
-
 	checkEngine()
 })
+
+function updateEngineNotice(isRunning) {
+	if (isRunning) {
+		if ($('#no-engine').css('display') == 'block')
+			$('#no-engine').css('display', 'none')
+		return
+	}
+
+	if ($('#no-engine').css('display') == 'none')
+		$('#no-engine').fadeIn()
+}
+
+async function checkEngine() {
+	try {
+		const result = await requestJson('engine-status')
+		updateEngineNotice(!!result.running)
+	} catch (err) {
+		updateEngineNotice(false)
+	} finally {
+		if (engineStatusTimer)
+			clearTimeout(engineStatusTimer)
+		engineStatusTimer = setTimeout(checkEngine, 5000)
+	}
+}
 
 async function apiCall(method, url, filename) {
 	const normalizedFilename = decodeDisplayValue(filename)
@@ -1043,6 +1070,7 @@ async function apiCall(method, url, filename) {
 async function handleChangeFolder() {
 	const result = await requestJson('change-folder')
 	if (result.done) {
+		await loadAppSettings().catch(() => {})
 		options()
 		return
 	}
