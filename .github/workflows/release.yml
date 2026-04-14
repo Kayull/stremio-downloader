@@ -209,12 +209,22 @@ jobs:
         run: |
           set -euo pipefail
           RELEASE_DIR="tauri/release/${{ steps.version.outputs.value }}-${{ matrix.platform_label }}"
-          DMG_SOURCE="$(find "${RELEASE_DIR}" -maxdepth 1 -type f -name '*.dmg' | head -n 1)"
+          APP_SOURCE="$(find "${RELEASE_DIR}" -maxdepth 1 -type d -name '*.app' | head -n 1)"
+          if [ -z "${APP_SOURCE}" ]; then
+            echo "No macOS app bundle found in ${RELEASE_DIR}" >&2
+            exit 1
+          fi
+          DMG_OUTPUT_DIR="tauri/release/create-dmg-output"
+          rm -rf "${DMG_OUTPUT_DIR}"
+          mkdir -p "${DMG_OUTPUT_DIR}"
+          npx create-dmg@8.1.0 --overwrite --no-code-sign "${APP_SOURCE}" "${DMG_OUTPUT_DIR}"
+          DMG_SOURCE="$(find "${DMG_OUTPUT_DIR}" -maxdepth 1 -type f -name '*.dmg' | head -n 1)"
           if [ -z "${DMG_SOURCE}" ]; then
-            echo "No DMG artifact found in ${RELEASE_DIR}" >&2
+            echo "create-dmg did not produce a DMG in ${DMG_OUTPUT_DIR}" >&2
             exit 1
           fi
           mv "${DMG_SOURCE}" "tauri/release/${{ steps.archive.outputs.value }}"
+          rm -rf "${DMG_OUTPUT_DIR}"
 
       - name: Prepare Windows release zip
         if: runner.os == 'Windows'
