@@ -22,7 +22,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -115,10 +115,10 @@ jobs:
     env:
       DESKTOP_STRIP_BINARIES: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: npm
@@ -154,7 +154,7 @@ jobs:
 
       - name: Cache universal macOS Node runtimes
         if: runner.os == 'macOS'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .ci/node
           key: ${{ runner.os }}-node-runtime-${{ steps.node-version.outputs.value }}
