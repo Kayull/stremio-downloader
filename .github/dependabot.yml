@@ -51,9 +51,7 @@ updates:
     pull-request-branch-name:
       separator: "-"
     cooldown:
-      semver-major-days: 14
-      semver-minor-days: 3
-      semver-patch-days: 1
+      default-days: 3
     groups:
       github-actions:
         patterns:
