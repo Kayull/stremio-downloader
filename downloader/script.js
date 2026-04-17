@@ -624,7 +624,7 @@ async function confirmAutoDeleteEmptyFolderPreference(file) {
 	if (!shouldPromptForAutoDeleteEmptyFolder(file))
 		return true
 
-	const choice = await showChoiceDialog(
+	const result = await showChoiceDialog(
 		'Delete empty show folders automatically?',
 		'Would you like to automatically delete the parent folder when the last show from that folder is deleted?',
 		[
@@ -643,13 +643,33 @@ async function confirmAutoDeleteEmptyFolderPreference(file) {
 				choice: 'cancel',
 				className: 'dialog-button-warning'
 			}
-		]
+		],
+		{
+			extraHtml: '' +
+				'<label class="dialog-toggle-card">' +
+					'<span class="dialog-toggle-copy">' +
+						'<strong>Ask every time</strong>' +
+						'<span>Do not remember this choice for future delete requests.</span>' +
+					'</span>' +
+					'<input id="autoDeleteEmptyShowFoldersAskEveryTime" class="dialog-toggle-input" type="checkbox">' +
+					'<span class="dialog-toggle-switch" aria-hidden="true"></span>' +
+				'</label>',
+			getResult: choice => {
+				const askEveryTimeInput = document.getElementById('autoDeleteEmptyShowFoldersAskEveryTime')
+				return {
+					choice,
+					askEveryTime: !!(askEveryTimeInput && askEveryTimeInput.checked)
+				}
+			}
+		}
 	)
 
-	if (choice === 'cancel')
+	if (result.choice === 'cancel')
 		return false
 
-	await persistAutoDeleteEmptyShowFolders(choice === 'yes')
+	if (!result.askEveryTime)
+		await persistAutoDeleteEmptyShowFolders(result.choice === 'yes')
+
 	return true
 }
 
@@ -779,6 +799,7 @@ function getLaunchParams() {
 function showDialog(title, copy, actions) {
 	stopLogRefresh()
 	activeDialogChoiceResolver = null
+	activeDialogChoiceResultGetter = null
 	dialog.classList.remove('dialog-large')
 	dialog.classList.remove('dialog-options')
 	let str = '' +
@@ -811,7 +832,7 @@ function showDialog(title, copy, actions) {
 	})
 }
 
-function showChoiceDialog(title, copy, actions) {
+function showChoiceDialog(title, copy, actions, options) {
 	stopLogRefresh()
 	dialog.classList.remove('dialog-large')
 	dialog.classList.remove('dialog-options')
@@ -821,6 +842,9 @@ function showChoiceDialog(title, copy, actions) {
 				'<h2 class="dialog-title">' + escapeHtml(title) + '</h2>' +
 				'<p class="dialog-copy">' + escapeHtml(copy) + '</p>' +
 			'</div>'
+
+	if (options && options.extraHtml)
+		str += options.extraHtml
 
 	actions.forEach(action => {
 		str += '' +
@@ -835,6 +859,9 @@ function showChoiceDialog(title, copy, actions) {
 
 	return new Promise(resolve => {
 		activeDialogChoiceResolver = resolve
+		activeDialogChoiceResultGetter = options && typeof options.getResult === 'function'
+			? options.getResult
+			: choice => choice
 		$('#dialog').html(str)
 		if (!dialog.open)
 			dialog.showModal()
@@ -1077,6 +1104,7 @@ let currentLogText = ''
 let currentLogSearch = ''
 let pendingActions = []
 let activeDialogChoiceResolver = null
+let activeDialogChoiceResultGetter = null
 let currentThemeMode = 'dark'
 let appSettings = getSettingsModel({})
 let logRefreshTimer = null
@@ -1093,8 +1121,10 @@ $(document).ready(() => {
 		if (!activeDialogChoiceResolver)
 			return
 		const resolve = activeDialogChoiceResolver
+		const getResult = activeDialogChoiceResultGetter || (choice => choice)
 		activeDialogChoiceResolver = null
-		resolve('cancel')
+		activeDialogChoiceResultGetter = null
+		resolve(getResult('cancel'))
 	})
 
 	$('#query').on('input', () => {
@@ -1110,9 +1140,12 @@ $(document).ready(() => {
 		if (this.dataset.dialogChoice) {
 			if (activeDialogChoiceResolver) {
 				const resolve = activeDialogChoiceResolver
+				const getResult = activeDialogChoiceResultGetter || (choice => choice)
 				activeDialogChoiceResolver = null
+				activeDialogChoiceResultGetter = null
+				const result = getResult(this.dataset.dialogChoice)
 				dialog.close()
-				resolve(this.dataset.dialogChoice)
+				resolve(result)
 			}
 			return
 		}
