@@ -99,4 +99,4 @@ The source of truth for the app version is the root `VERSION` file. Build script
 
 ## Notes
 
-- You might need to log in after pressing `Load Stremio`, otherwise Stremio may use an anonymous session without your installed add-ons.
+- You will need to login after pressing `Load Stremio`, otherwise Stremio will use an anonymous session without your installed add-ons. There is a toggle in options to attempt to save the login state so that you can avoid having to login all the time.

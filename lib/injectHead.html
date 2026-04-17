@@ -1,7 +1,10 @@
 <script>
 ;(function () {
 	const PERSIST_DELAY_MS = 400
+	const STORAGE_POLL_INTERVAL_MS = 10000
 	let persistTimer = null
+	let storagePollTimer = null
+	let lastSnapshotSignature = ''
 
 	function getBaseUrl() {
 		return window.location.href.split('/web/')[0]
@@ -52,6 +55,60 @@
 		return values
 	}
 
+	function snapshotShellStorage() {
+		return {
+			localStorage: snapshotStorageArea(window.localStorage),
+			sessionStorage: snapshotStorageArea(window.sessionStorage)
+		}
+	}
+
+	function getSnapshotSignature(snapshot) {
+		try {
+			return JSON.stringify(snapshot || {})
+		} catch (err) {
+			return ''
+		}
+	}
+
+	function rememberCurrentSnapshot() {
+		lastSnapshotSignature = getSnapshotSignature(snapshotShellStorage())
+	}
+
+	function detectStorageMutation() {
+		if (!isStremioShell())
+			return false
+
+		const nextSignature = getSnapshotSignature(snapshotShellStorage())
+		if (!nextSignature || nextSignature === lastSnapshotSignature)
+			return false
+
+		lastSnapshotSignature = nextSignature
+		schedulePersistShellStorage()
+		return true
+	}
+
+	function startStoragePolling() {
+		if (!isStremioShell())
+			return
+
+		if (storagePollTimer)
+			clearInterval(storagePollTimer)
+
+		storagePollTimer = setInterval(function () {
+			detectStorageMutation()
+		}, STORAGE_POLL_INTERVAL_MS)
+	}
+
+	function handleStorageEvent(event) {
+		if (!isStremioShell())
+			return
+
+		if (event && event.storageArea && event.storageArea !== window.localStorage && event.storageArea !== window.sessionStorage)
+			return
+
+		detectStorageMutation()
+	}
+
 	function restorePersistedShellStorage() {
 		if (!isStremioShell())
 			return
@@ -67,6 +124,7 @@
 			const payload = parseStoragePayload(request.responseText)
 			replaceStorageArea(window.localStorage, payload.localStorage)
 			replaceStorageArea(window.sessionStorage, payload.sessionStorage)
+			rememberCurrentSnapshot()
 		} catch (err) {}
 	}
 
@@ -75,13 +133,12 @@
 			return
 
 		try {
+			const snapshot = snapshotShellStorage()
+			lastSnapshotSignature = getSnapshotSignature(snapshot)
 			const request = new XMLHttpRequest()
 			request.open('POST', getBaseUrl() + '/api?method=shell-storage', true)
 			request.setRequestHeader('Content-Type', 'application/json; charset=utf-8')
-			request.send(JSON.stringify({
-				localStorage: snapshotStorageArea(window.localStorage),
-				sessionStorage: snapshotStorageArea(window.sessionStorage)
-			}))
+			request.send(JSON.stringify(snapshot))
 		} catch (err) {}
 	}
 
@@ -128,6 +185,8 @@
 	restorePersistedShellStorage()
 	wrapStorageArea(window.localStorage)
 	wrapStorageArea(window.sessionStorage)
+	rememberCurrentSnapshot()
+	startStoragePolling()
 
 	window.addEventListener('pagehide', function () {
 		clearTimeout(persistTimer)
@@ -139,8 +198,14 @@
 			clearTimeout(persistTimer)
 			persistTimer = null
 			persistShellStorage()
+			return
 		}
+
+		detectStorageMutation()
 	})
+	window.addEventListener('storage', handleStorageEvent)
+	window.addEventListener('focus', detectStorageMutation)
+	window.addEventListener('pageshow', detectStorageMutation)
 
 	let oldFetch = fetch
 	function newFetch() {

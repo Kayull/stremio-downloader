@@ -462,6 +462,7 @@ function getSettingsModel(settings) {
 		hasFolder: model.hasFolder !== false && !!folder,
 		useShowSubfolders: model.useShowSubfolders !== false,
 		autoDeleteEmptyShowFolders: normalizeAutoDeleteEmptyShowFolders(model.autoDeleteEmptyShowFolders),
+		persistLoginState: model.persistLoginState !== false,
 		themeMode: normalizeThemeMode(model.themeMode),
 		skippedReleaseVersion: String(model.skippedReleaseVersion || '').trim().replace(/^v/i, '')
 	}
@@ -618,6 +619,52 @@ async function persistAutoDeleteEmptyShowFolders(enabled) {
 		autoDeleteEmptyShowFolders: nextValue
 	})
 	return nextValue
+}
+
+async function persistLoginStatePreference(enabled) {
+	const result = await requestJson('set-persist-login-state', null, null, {
+		enabled: String(enabled !== false)
+	})
+	const nextValue = result.persistLoginState !== false
+	appSettings = Object.assign({}, appSettings, {
+		persistLoginState: nextValue
+	})
+	return nextValue
+}
+
+async function handleResetSavedLogin() {
+	const result = await showChoiceDialog(
+		'Reset saved login?',
+		'This clears the remembered Stremio login for future launches. You will need to sign in again after Stremio reloads.',
+		[
+			{
+				label: 'Reset Saved Login',
+				choice: 'reset',
+				className: 'dialog-button-warning'
+			},
+			{
+				label: 'Cancel',
+				choice: 'cancel',
+				className: 'dialog-button-secondary'
+			}
+		]
+	)
+
+	if (result === 'cancel')
+		return
+
+	await requestJson('reset-login-state')
+	showDialog(
+		'Saved login reset',
+		'Remembered Stremio login data has been cleared. The next Stremio reload will require signing in again.',
+		[
+			{
+				label: 'Close',
+				closeOnly: true,
+				className: 'dialog-button-primary'
+			}
+		]
+	)
 }
 
 async function confirmAutoDeleteEmptyFolderPreference(file) {
@@ -883,6 +930,7 @@ function options() {
 		const folder = settingsModel.folder
 		const useShowSubfolders = settingsModel.useShowSubfolders
 		const autoDeleteEmptyShowFolders = settingsModel.autoDeleteEmptyShowFolders === true
+		const persistLoginState = settingsModel.persistLoginState !== false
 		dialog.classList.remove('dialog-large')
 		dialog.classList.add('dialog-options')
 		$('#dialog').html('' +
@@ -910,11 +958,20 @@ function options() {
 					'<input id="autoDeleteEmptyShowFolders" class="dialog-toggle-input" type="checkbox"' + (autoDeleteEmptyShowFolders ? ' checked' : '') + '>' +
 					'<span class="dialog-toggle-switch" aria-hidden="true"></span>' +
 				'</label>' +
+				'<label class="dialog-toggle-card">' +
+					'<span class="dialog-toggle-copy">' +
+						'<strong>Keep Stremio logged in after restart</strong>' +
+						'<span>When enabled, the app saves and restores Stremio shell state between launches. When disabled, shell storage is not saved or restored.</span>' +
+					'</span>' +
+					'<input id="persistLoginState" class="dialog-toggle-input" type="checkbox"' + (persistLoginState ? ' checked' : '') + '>' +
+					'<span class="dialog-toggle-switch" aria-hidden="true"></span>' +
+				'</label>' +
 				'<div class="dialog-actions-grid">' +
 					'<button type="button" class="dialog-button dialog-button-primary js-dialog-action" data-method="open-folder">Open Download Folder</button>' +
 					'<button type="button" class="dialog-button dialog-button-secondary js-dialog-action" data-method="change-folder">Change Download Folder</button>' +
 					'<button type="button" class="dialog-button dialog-button-secondary js-dialog-action" data-method="show-logs">View Logs</button>' +
 					'<button type="button" class="dialog-button dialog-button-secondary js-dialog-action" data-method="install-addon">Install Downloader as Add-on</button>' +
+					'<button type="button" class="dialog-button dialog-button-warning js-dialog-action" data-method="reset-login-state">Reset Saved Login</button>' +
 				'</div>' +
 				'<button type="button" class="dialog-button dialog-button-warning js-dialog-action" data-close-only="true">Close</button>' +
 			'</div>'
@@ -1189,6 +1246,16 @@ $(document).ready(() => {
 		})
 	})
 
+	$('#dialog').on('change', '#persistLoginState', function () {
+		const input = this
+		persistLoginStatePreference(input.checked).then(nextValue => {
+			input.checked = nextValue
+		}).catch(err => {
+			input.checked = !input.checked
+			showErrorDialog('Action failed', getRequestFailureMessage(err, err.message))
+		})
+	})
+
 	$('#theme-toggle').on('click', async () => {
 		const nextThemeMode = currentThemeMode === 'dark' ? 'light' : 'dark'
 		applyTheme(nextThemeMode)
@@ -1336,6 +1403,11 @@ async function handleAction(method, url, filename, options) {
 
 		if (method === 'install-addon') {
 			await handleInstallAddon()
+			return
+		}
+
+		if (method === 'reset-login-state') {
+			await handleResetSavedLogin()
 			return
 		}
 
