@@ -85,6 +85,14 @@ function normalizeThemeMode(value) {
 	return value === 'light' ? 'light' : 'dark'
 }
 
+function normalizeAutoDeleteEmptyShowFolders(value) {
+	if (value === true)
+		return true
+	if (value === false)
+		return false
+	return null
+}
+
 const LIST_REFRESH_INTERVAL_MS = 500
 const LOG_REFRESH_INTERVAL_MS = 1000
 const LOG_FOLLOW_BOTTOM_THRESHOLD_PX = 12
@@ -453,6 +461,7 @@ function getSettingsModel(settings) {
 		folder,
 		hasFolder: model.hasFolder !== false && !!folder,
 		useShowSubfolders: model.useShowSubfolders !== false,
+		autoDeleteEmptyShowFolders: normalizeAutoDeleteEmptyShowFolders(model.autoDeleteEmptyShowFolders),
 		themeMode: normalizeThemeMode(model.themeMode),
 		skippedReleaseVersion: String(model.skippedReleaseVersion || '').trim().replace(/^v/i, '')
 	}
@@ -473,6 +482,7 @@ function updateDownloadFolderNotice(settings) {
 
 async function loadAppSettings() {
 	const settings = getSettingsModel(await requestJson('download-settings'))
+	appSettings = settings
 	updateDownloadFolderNotice(settings)
 	const storedThemeMode = getStoredThemeMode()
 	applyTheme(storedThemeMode || settings.themeMode)
@@ -555,6 +565,92 @@ function applyFileAction(files, method, url) {
 	}
 
 	return list.slice()
+}
+
+function normalizeFilesystemPath(value) {
+	return String(value || '')
+		.trim()
+		.replace(/\\/g, '/')
+		.replace(/\/+$/, '')
+		.toLowerCase()
+}
+
+function getParentFilesystemPath(filePath) {
+	const normalized = normalizeFilesystemPath(filePath)
+	if (!normalized)
+		return ''
+
+	const idx = normalized.lastIndexOf('/')
+	if (idx <= 0)
+		return ''
+
+	return normalized.slice(0, idx)
+}
+
+function findFileByUrl(url) {
+	return currentFiles.find(file => file.url === url)
+}
+
+function shouldPromptForAutoDeleteEmptyFolder(file) {
+	if (!file || !file.filePath)
+		return false
+	if (appSettings.autoDeleteEmptyShowFolders !== null)
+		return false
+
+	const rootFolder = normalizeFilesystemPath(appSettings.folder)
+	const parentFolder = getParentFilesystemPath(file.filePath)
+	if (!rootFolder || !parentFolder || parentFolder === rootFolder)
+		return false
+
+	return !currentFiles.some(otherFile => {
+		if (!otherFile || otherFile.url === file.url || otherFile.missingOnDisk || !otherFile.filePath)
+			return false
+		return getParentFilesystemPath(otherFile.filePath) === parentFolder
+	})
+}
+
+async function persistAutoDeleteEmptyShowFolders(enabled) {
+	const result = await requestJson('set-auto-delete-empty-show-folders', null, null, {
+		enabled: String(enabled === true)
+	})
+	const nextValue = normalizeAutoDeleteEmptyShowFolders(result.autoDeleteEmptyShowFolders)
+	appSettings = Object.assign({}, appSettings, {
+		autoDeleteEmptyShowFolders: nextValue
+	})
+	return nextValue
+}
+
+async function confirmAutoDeleteEmptyFolderPreference(file) {
+	if (!shouldPromptForAutoDeleteEmptyFolder(file))
+		return true
+
+	const choice = await showChoiceDialog(
+		'Delete empty show folders automatically?',
+		'Would you like to automatically delete the parent folder when the last show from that folder is deleted?',
+		[
+			{
+				label: 'Delete Folder',
+				choice: 'yes',
+				className: 'dialog-button-primary'
+			},
+			{
+				label: 'Keep Folder',
+				choice: 'no',
+				className: 'dialog-button-secondary'
+			},
+			{
+				label: 'Cancel',
+				choice: 'cancel',
+				className: 'dialog-button-warning'
+			}
+		]
+	)
+
+	if (choice === 'cancel')
+		return false
+
+	await persistAutoDeleteEmptyShowFolders(choice === 'yes')
+	return true
 }
 
 function getVisibleFiles(files) {
@@ -682,6 +778,7 @@ function getLaunchParams() {
 
 function showDialog(title, copy, actions) {
 	stopLogRefresh()
+	activeDialogChoiceResolver = null
 	dialog.classList.remove('dialog-large')
 	dialog.classList.remove('dialog-options')
 	let str = '' +
@@ -714,6 +811,39 @@ function showDialog(title, copy, actions) {
 	})
 }
 
+function showChoiceDialog(title, copy, actions) {
+	stopLogRefresh()
+	dialog.classList.remove('dialog-large')
+	dialog.classList.remove('dialog-options')
+	let str = '' +
+		'<div class="dialog-stack">' +
+			'<div>' +
+				'<h2 class="dialog-title">' + escapeHtml(title) + '</h2>' +
+				'<p class="dialog-copy">' + escapeHtml(copy) + '</p>' +
+			'</div>'
+
+	actions.forEach(action => {
+		str += '' +
+			'<button type="button" class="dialog-button js-dialog-action ' + (action.className || '') + '"' +
+				' data-dialog-choice="' + escapeAttribute(action.choice) + '"' +
+			'>' +
+				escapeHtml(action.label) +
+			'</button>'
+	})
+
+	str += '</div>'
+
+	return new Promise(resolve => {
+		activeDialogChoiceResolver = resolve
+		$('#dialog').html(str)
+		if (!dialog.open)
+			dialog.showModal()
+		setTimeout(() => {
+			document.activeElement.blur()
+		})
+	})
+}
+
 function options() {
 	stopLogRefresh()
 	request('download-settings', null, null, settingsResponse => {
@@ -722,11 +852,13 @@ function options() {
 			settings = JSON.parse(settingsResponse || '{}')
 		} catch (err) {}
 		const settingsModel = getSettingsModel(settings)
+		appSettings = settingsModel
 		const folder = settingsModel.folder
 		const useShowSubfolders = settingsModel.useShowSubfolders
+		const autoDeleteEmptyShowFolders = settingsModel.autoDeleteEmptyShowFolders === true
 		dialog.classList.remove('dialog-large')
 		dialog.classList.add('dialog-options')
-			$('#dialog').html('' +
+		$('#dialog').html('' +
 			'<div class="dialog-stack dialog-stack-options">' +
 				'<div>' +
 					'<h2 class="dialog-title">Downloader options</h2>' +
@@ -741,6 +873,14 @@ function options() {
 						'<span>Series downloads are placed into a subfolder named from Stremio metadata.</span>' +
 					'</span>' +
 					'<input id="useShowSubfolders" class="dialog-toggle-input" type="checkbox"' + (useShowSubfolders ? ' checked' : '') + '>' +
+					'<span class="dialog-toggle-switch" aria-hidden="true"></span>' +
+				'</label>' +
+				'<label class="dialog-toggle-card">' +
+					'<span class="dialog-toggle-copy">' +
+						'<strong>Delete empty show folders automatically</strong>' +
+						'<span>When the last tracked file in a show subfolder is removed, also remove that folder if nothing else is left in it.</span>' +
+					'</span>' +
+					'<input id="autoDeleteEmptyShowFolders" class="dialog-toggle-input" type="checkbox"' + (autoDeleteEmptyShowFolders ? ' checked' : '') + '>' +
 					'<span class="dialog-toggle-switch" aria-hidden="true"></span>' +
 				'</label>' +
 				'<div class="dialog-actions-grid">' +
@@ -936,7 +1076,9 @@ let currentFiles = []
 let currentLogText = ''
 let currentLogSearch = ''
 let pendingActions = []
+let activeDialogChoiceResolver = null
 let currentThemeMode = 'dark'
+let appSettings = getSettingsModel({})
 let logRefreshTimer = null
 let logRefreshRequest = null
 let engineStatusTimer = null
@@ -947,6 +1089,13 @@ $(document).ready(() => {
 	dialog = document.querySelector('dialog')
 
 	dialogPolyfill.registerDialog(dialog)
+	dialog.addEventListener('close', () => {
+		if (!activeDialogChoiceResolver)
+			return
+		const resolve = activeDialogChoiceResolver
+		activeDialogChoiceResolver = null
+		resolve('cancel')
+	})
 
 	$('#query').on('input', () => {
 		renderDownloads()
@@ -958,6 +1107,15 @@ $(document).ready(() => {
 	})
 
 	$('#dialog').on('click', '.js-dialog-action', function () {
+		if (this.dataset.dialogChoice) {
+			if (activeDialogChoiceResolver) {
+				const resolve = activeDialogChoiceResolver
+				activeDialogChoiceResolver = null
+				dialog.close()
+				resolve(this.dataset.dialogChoice)
+			}
+			return
+		}
 		if (this.dataset.closeOnly === 'true') {
 			closeDialog()
 			return
@@ -987,6 +1145,15 @@ $(document).ready(() => {
 
 	$('#dialog').on('change', '#useShowSubfolders', function () {
 		request('set-use-show-subfolders', null, null, null, { enabled: String(this.checked) })
+		appSettings = Object.assign({}, appSettings, {
+			useShowSubfolders: this.checked
+		})
+	})
+
+	$('#dialog').on('change', '#autoDeleteEmptyShowFolders', function () {
+		persistAutoDeleteEmptyShowFolders(this.checked).catch(err => {
+			showErrorDialog('Action failed', getRequestFailureMessage(err, err.message))
+		})
 	})
 
 	$('#theme-toggle').on('click', async () => {
@@ -1143,6 +1310,13 @@ async function handleAction(method, url, filename, options) {
 			await handlePlay(url, filename, (options || {}).playUrl)
 			closeDialog()
 			return
+		}
+
+		if (method === 'remove-download') {
+			const file = findFileByUrl(url)
+			const shouldContinue = await confirmAutoDeleteEmptyFolderPreference(file)
+			if (!shouldContinue)
+				return
 		}
 
 		await apiCall(method, url, filename)
