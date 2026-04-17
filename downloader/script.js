@@ -186,7 +186,7 @@ function getStatusModel(file) {
 	if (file.missingOnDisk)
 		return { label: 'Missing', className: 'status-missing', detail: 'Download completed, but the file is not found in the download folder.' }
 	if (file.error)
-		return { label: 'Error', className: 'status-error', detail: 'Download failed.' }
+		return { label: 'Error', className: 'status-error', detail: file.errorMessage || 'Download failed.' }
 	if (file.completed)
 		return { label: 'Completed', className: 'status-completed', detail: 'Saved in download folder.' }
 	if (file.stopped)
