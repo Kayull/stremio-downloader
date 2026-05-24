@@ -211,6 +211,15 @@ function getProgressPillMarkup(file, progress) {
 	return '<span class="meta-pill progress-pill">' + escapeHtml(file.isHls ? 'Live HLS stream' : progress + '% complete') + '</span>'
 }
 
+function getResumePillMarkup(file) {
+	if (typeof file.resumeSupported !== 'boolean')
+		return ''
+
+	const label = file.resumeSupported ? 'Resume supported' : 'Resume not supported'
+	const className = file.resumeSupported ? 'resume-pill-supported' : 'resume-pill-unsupported'
+	return '<span class="meta-pill resume-pill ' + className + '">' + escapeHtml(label) + '</span>'
+}
+
 function renderActionButton(label, icon, method, url, filename, accentClassName, playUrl) {
 	return '' +
 		'<button type="button" class="action-button' + (accentClassName ? (' ' + accentClassName) : '') + ' js-action" aria-label="' + escapeAttribute(label) + '" title="' + escapeAttribute(label) + '"' +
@@ -250,6 +259,9 @@ function fileToCard(file) {
 		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
 		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
 	]
+	const resumePill = getResumePillMarkup(file)
+	if (resumePill)
+		metaPills.push(resumePill)
 	const progressPill = getProgressPillMarkup(file, progress)
 
 	let actionButtons = ''
@@ -299,11 +311,15 @@ function getFileKey(file) {
 }
 
 function getMetaPillsMarkup(file, status, sourceKind, displayName) {
-	return [
+	const pills = [
 		'<span class="status-pill ' + status.className + '">' + escapeHtml(status.label) + '</span>',
 		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
 		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
-	].join('')
+	]
+	const resumePill = getResumePillMarkup(file)
+	if (resumePill)
+		pills.push(resumePill)
+	return pills.join('')
 }
 
 function getActionButtonsMarkup(file) {

@@ -607,6 +607,16 @@ button {
   color: var(--primary-strong);
 }
 
+.resume-pill-supported {
+  background: rgba(25, 180, 122, 0.13);
+  color: #0f8f63;
+}
+
+.resume-pill-unsupported {
+  background: rgba(141, 152, 170, 0.16);
+  color: var(--muted);
+}
+
 .source-pill-torrent {
   background: linear-gradient(135deg, #8b5cf6, #6d55ff);
 }
