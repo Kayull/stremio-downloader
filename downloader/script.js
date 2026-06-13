@@ -101,6 +101,7 @@ const PENDING_ACTION_METHODS = ['remove-download', 'stop-download']
 const THEME_STORAGE_KEY = 'stremio-downloader-theme-mode'
 let updatePromptShown = false
 let updateDownloadInFlight = false
+let updateDownloadStatusTimer = null
 
 function formatExtension(filename) {
 	const decoded = decodeDisplayValue(filename)
@@ -860,7 +861,7 @@ function getLaunchParams() {
 		: null
 }
 
-function showDialog(title, copy, actions) {
+function showDialog(title, copy, actions, options) {
 	stopLogRefresh()
 	activeDialogChoiceResolver = null
 	activeDialogChoiceResultGetter = null
@@ -872,6 +873,9 @@ function showDialog(title, copy, actions) {
 				'<h2 class="dialog-title">' + escapeHtml(title) + '</h2>' +
 				'<p class="dialog-copy">' + escapeHtml(copy) + '</p>' +
 			'</div>'
+
+	if (options && options.extraHtml)
+		str += options.extraHtml
 
 	actions.forEach(action => {
 		str += '' +
@@ -894,6 +898,93 @@ function showDialog(title, copy, actions) {
 	setTimeout(() => {
 		document.activeElement.blur()
 	})
+}
+
+function getUpdateDownloadProgressHtml(status) {
+	status = status || {}
+	const total = Number(status.total) || 0
+	const current = Number(status.current) || 0
+	const progress = clampProgress(status.progress)
+	const hasTotal = total > 0
+	const detail = hasTotal
+		? (progress + '% - ' + formatBytes(current) + ' of ' + formatBytes(total))
+		: (formatBytes(current) + ' downloaded')
+
+	return '' +
+		'<div class="dialog-progress-card js-update-progress">' +
+			'<div class="dialog-progress-row">' +
+				'<span class="dialog-progress-label">Download progress</span>' +
+				'<span class="dialog-progress-value">' + escapeHtml(detail) + '</span>' +
+			'</div>' +
+			'<div class="progress-track dialog-progress-track' + (hasTotal ? '' : ' progress-indeterminate') + '" role="progressbar" aria-valuemin="0" aria-valuemax="100"' + (hasTotal ? (' aria-valuenow="' + progress + '"') : '') + '>' +
+				'<div class="progress-fill"' + (hasTotal ? (' style="width: ' + progress + '%"') : '') + '></div>' +
+			'</div>' +
+		'</div>'
+}
+
+function showUpdateDownloadProgress(status) {
+	showDialog(
+		'Downloading update...',
+		'Stremio Downloader is downloading the latest release.',
+		[],
+		{ extraHtml: getUpdateDownloadProgressHtml(status) }
+	)
+}
+
+function updateUpdateDownloadProgress(status) {
+	const container = dialog && dialog.querySelector('.js-update-progress')
+	if (!container)
+		return
+
+	const total = Number((status || {}).total) || 0
+	const current = Number((status || {}).current) || 0
+	const progress = clampProgress((status || {}).progress)
+	const hasTotal = total > 0
+	const detail = hasTotal
+		? (progress + '% - ' + formatBytes(current) + ' of ' + formatBytes(total))
+		: (formatBytes(current) + ' downloaded')
+	const value = container.querySelector('.dialog-progress-value')
+	const track = container.querySelector('.dialog-progress-track')
+	const fill = container.querySelector('.progress-fill')
+
+	if (value)
+		value.textContent = detail
+	if (track) {
+		track.classList.toggle('progress-indeterminate', !hasTotal)
+		if (hasTotal)
+			track.setAttribute('aria-valuenow', String(progress))
+		else
+			track.removeAttribute('aria-valuenow')
+	}
+	if (fill)
+		fill.style.width = hasTotal ? (progress + '%') : ''
+}
+
+function stopUpdateDownloadStatusPolling() {
+	if (!updateDownloadStatusTimer)
+		return
+
+	clearTimeout(updateDownloadStatusTimer)
+	updateDownloadStatusTimer = null
+}
+
+function startUpdateDownloadStatusPolling() {
+	stopUpdateDownloadStatusPolling()
+
+	async function poll() {
+		try {
+			const status = await requestJson('update-download-status', null, null, { desktop: 'true' })
+			updateUpdateDownloadProgress(status)
+			if (status.done || status.error) {
+				updateDownloadStatusTimer = null
+				return
+			}
+		} catch (err) {}
+
+		updateDownloadStatusTimer = setTimeout(poll, 300)
+	}
+
+	updateDownloadStatusTimer = setTimeout(poll, 100)
 }
 
 function showChoiceDialog(title, copy, actions, options) {
@@ -1404,13 +1495,16 @@ async function handleDownloadUpdate() {
 		return
 
 	updateDownloadInFlight = true
-	showDialog('Downloading update...', 'Stremio Downloader is downloading the latest release.', [])
+	showUpdateDownloadProgress({ current: 0, total: 0, progress: 0 })
+	startUpdateDownloadStatusPolling()
 
 	try {
 		const result = await requestJson('download-update', null, null, { desktop: 'true' })
 		if (!result.done)
 			throw new Error(result.message || 'Could not download the update.')
 
+		stopUpdateDownloadStatusPolling()
+		updateUpdateDownloadProgress({ current: 1, total: 1, progress: 100 })
 		showDialog(
 			'Update downloaded',
 			'Would you like to quit the app to install the update?',
@@ -1428,6 +1522,7 @@ async function handleDownloadUpdate() {
 			]
 		)
 	} catch (err) {
+		stopUpdateDownloadStatusPolling()
 		showErrorDialog('Update download failed', getRequestFailureMessage(err, err.message))
 	} finally {
 		updateDownloadInFlight = false
