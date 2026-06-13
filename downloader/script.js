@@ -100,6 +100,8 @@ const desktopMode = new URLSearchParams(window.location.search).get('desktop') =
 const PENDING_ACTION_METHODS = ['remove-download', 'stop-download']
 const THEME_STORAGE_KEY = 'stremio-downloader-theme-mode'
 let updatePromptShown = false
+let updateDownloadInFlight = false
+let updateDownloadStatusTimer = null
 
 function formatExtension(filename) {
 	const decoded = decodeDisplayValue(filename)
@@ -211,6 +213,15 @@ function getProgressPillMarkup(file, progress) {
 	return '<span class="meta-pill progress-pill">' + escapeHtml(file.isHls ? 'Live HLS stream' : progress + '% complete') + '</span>'
 }
 
+function getResumePillMarkup(file) {
+	if (typeof file.resumeSupported !== 'boolean')
+		return ''
+
+	const label = file.resumeSupported ? 'Resume supported' : 'Resume not supported'
+	const className = file.resumeSupported ? 'resume-pill-supported' : 'resume-pill-unsupported'
+	return '<span class="meta-pill resume-pill ' + className + '">' + escapeHtml(label) + '</span>'
+}
+
 function renderActionButton(label, icon, method, url, filename, accentClassName, playUrl) {
 	return '' +
 		'<button type="button" class="action-button' + (accentClassName ? (' ' + accentClassName) : '') + ' js-action" aria-label="' + escapeAttribute(label) + '" title="' + escapeAttribute(label) + '"' +
@@ -250,6 +261,9 @@ function fileToCard(file) {
 		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
 		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
 	]
+	const resumePill = getResumePillMarkup(file)
+	if (resumePill)
+		metaPills.push(resumePill)
 	const progressPill = getProgressPillMarkup(file, progress)
 
 	let actionButtons = ''
@@ -299,11 +313,15 @@ function getFileKey(file) {
 }
 
 function getMetaPillsMarkup(file, status, sourceKind, displayName) {
-	return [
+	const pills = [
 		'<span class="status-pill ' + status.className + '">' + escapeHtml(status.label) + '</span>',
 		'<span class="meta-pill source-pill ' + sourceKind.className + '">' + escapeHtml(sourceKind.label) + '</span>',
 		'<span class="meta-pill">' + escapeHtml(formatExtension(displayName)) + '</span>'
-	].join('')
+	]
+	const resumePill = getResumePillMarkup(file)
+	if (resumePill)
+		pills.push(resumePill)
+	return pills.join('')
 }
 
 function getActionButtonsMarkup(file) {
@@ -843,7 +861,7 @@ function getLaunchParams() {
 		: null
 }
 
-function showDialog(title, copy, actions) {
+function showDialog(title, copy, actions, options) {
 	stopLogRefresh()
 	activeDialogChoiceResolver = null
 	activeDialogChoiceResultGetter = null
@@ -855,6 +873,9 @@ function showDialog(title, copy, actions) {
 				'<h2 class="dialog-title">' + escapeHtml(title) + '</h2>' +
 				'<p class="dialog-copy">' + escapeHtml(copy) + '</p>' +
 			'</div>'
+
+	if (options && options.extraHtml)
+		str += options.extraHtml
 
 	actions.forEach(action => {
 		str += '' +
@@ -877,6 +898,93 @@ function showDialog(title, copy, actions) {
 	setTimeout(() => {
 		document.activeElement.blur()
 	})
+}
+
+function getUpdateDownloadProgressHtml(status) {
+	status = status || {}
+	const total = Number(status.total) || 0
+	const current = Number(status.current) || 0
+	const progress = clampProgress(status.progress)
+	const hasTotal = total > 0
+	const detail = hasTotal
+		? (progress + '% - ' + formatBytes(current) + ' of ' + formatBytes(total))
+		: (formatBytes(current) + ' downloaded')
+
+	return '' +
+		'<div class="dialog-progress-card js-update-progress">' +
+			'<div class="dialog-progress-row">' +
+				'<span class="dialog-progress-label">Download progress</span>' +
+				'<span class="dialog-progress-value">' + escapeHtml(detail) + '</span>' +
+			'</div>' +
+			'<div class="progress-track dialog-progress-track' + (hasTotal ? '' : ' progress-indeterminate') + '" role="progressbar" aria-valuemin="0" aria-valuemax="100"' + (hasTotal ? (' aria-valuenow="' + progress + '"') : '') + '>' +
+				'<div class="progress-fill"' + (hasTotal ? (' style="width: ' + progress + '%"') : '') + '></div>' +
+			'</div>' +
+		'</div>'
+}
+
+function showUpdateDownloadProgress(status) {
+	showDialog(
+		'Downloading update...',
+		'Stremio Downloader is downloading the latest release.',
+		[],
+		{ extraHtml: getUpdateDownloadProgressHtml(status) }
+	)
+}
+
+function updateUpdateDownloadProgress(status) {
+	const container = dialog && dialog.querySelector('.js-update-progress')
+	if (!container)
+		return
+
+	const total = Number((status || {}).total) || 0
+	const current = Number((status || {}).current) || 0
+	const progress = clampProgress((status || {}).progress)
+	const hasTotal = total > 0
+	const detail = hasTotal
+		? (progress + '% - ' + formatBytes(current) + ' of ' + formatBytes(total))
+		: (formatBytes(current) + ' downloaded')
+	const value = container.querySelector('.dialog-progress-value')
+	const track = container.querySelector('.dialog-progress-track')
+	const fill = container.querySelector('.progress-fill')
+
+	if (value)
+		value.textContent = detail
+	if (track) {
+		track.classList.toggle('progress-indeterminate', !hasTotal)
+		if (hasTotal)
+			track.setAttribute('aria-valuenow', String(progress))
+		else
+			track.removeAttribute('aria-valuenow')
+	}
+	if (fill)
+		fill.style.width = hasTotal ? (progress + '%') : ''
+}
+
+function stopUpdateDownloadStatusPolling() {
+	if (!updateDownloadStatusTimer)
+		return
+
+	clearTimeout(updateDownloadStatusTimer)
+	updateDownloadStatusTimer = null
+}
+
+function startUpdateDownloadStatusPolling() {
+	stopUpdateDownloadStatusPolling()
+
+	async function poll() {
+		try {
+			const status = await requestJson('update-download-status', null, null, { desktop: 'true' })
+			updateUpdateDownloadProgress(status)
+			if (status.done || status.error) {
+				updateDownloadStatusTimer = null
+				return
+			}
+		} catch (err) {}
+
+		updateDownloadStatusTimer = setTimeout(poll, 300)
+	}
+
+	updateDownloadStatusTimer = setTimeout(poll, 100)
 }
 
 function showChoiceDialog(title, copy, actions, options) {
@@ -1100,27 +1208,36 @@ async function checkForAppUpdate() {
 	if (settings.skippedReleaseVersion && settings.skippedReleaseVersion === String(releaseInfo.latestVersion || '').trim().replace(/^v/i, ''))
 		return
 
+	const canDownloadUpdate = desktopMode && releaseInfo.updateAsset && releaseInfo.updateAsset.downloadUrl
+	const primaryAction = canDownloadUpdate
+		? {
+			label: 'Download Update',
+			method: 'download-update',
+			className: 'dialog-button-primary'
+		}
+		: {
+			label: 'Open Release',
+			externalUrl: releaseInfo.releaseUrl,
+			className: 'dialog-button-primary'
+		}
+
 	updatePromptShown = true
 	showDialog(
 		'Update available',
 		'A newer version of Stremio Downloader is available. You are running ' +
 			(releaseInfo.currentVersion || 'an older version') +
 			' and the latest release is ' + releaseInfo.latestVersion + '.',
-			[
-				{
-					label: 'Open Release',
-					externalUrl: releaseInfo.releaseUrl,
-					className: 'dialog-button-primary'
-				},
-				{
-					label: 'Skip this version',
-					method: 'skip-release-version',
-					url: releaseInfo.latestVersion,
-					className: 'dialog-button-secondary'
-				},
-				{
-					label: 'Later',
-					closeOnly: true,
+		[
+			primaryAction,
+			{
+				label: 'Skip this version',
+				method: 'skip-release-version',
+				url: releaseInfo.latestVersion,
+				className: 'dialog-button-secondary'
+			},
+			{
+				label: 'Later',
+				closeOnly: true,
 				className: 'dialog-button-secondary'
 			}
 		]
@@ -1373,6 +1490,55 @@ async function handleInstallAddon() {
 	window.location.assign(result.url)
 }
 
+async function handleDownloadUpdate() {
+	if (updateDownloadInFlight)
+		return
+
+	updateDownloadInFlight = true
+	showUpdateDownloadProgress({ current: 0, total: 0, progress: 0 })
+	startUpdateDownloadStatusPolling()
+
+	try {
+		const result = await requestJson('download-update', null, null, { desktop: 'true' })
+		if (!result.done)
+			throw new Error(result.message || 'Could not download the update.')
+
+		stopUpdateDownloadStatusPolling()
+		updateUpdateDownloadProgress({ current: 1, total: 1, progress: 100 })
+		showDialog(
+			'Update downloaded',
+			'Would you like to quit the app to install the update?',
+			[
+				{
+					label: 'Quit and Install',
+					method: 'install-downloaded-update',
+					className: 'dialog-button-primary'
+				},
+				{
+					label: 'Later',
+					closeOnly: true,
+					className: 'dialog-button-secondary'
+				}
+			]
+		)
+	} catch (err) {
+		stopUpdateDownloadStatusPolling()
+		showErrorDialog('Update download failed', getRequestFailureMessage(err, err.message))
+	} finally {
+		updateDownloadInFlight = false
+	}
+}
+
+async function handleInstallDownloadedUpdate() {
+	showDialog('Installing update...', 'Stremio Downloader is quitting to install the update.', [])
+
+	const result = await requestJson('install-downloaded-update', null, null, { desktop: 'true' })
+	if (!result.done)
+		throw new Error(result.message || 'Could not prepare the update installer.')
+
+	showDialog('Installing update...', 'Stremio Downloader is quitting to install the update.', [])
+}
+
 async function handlePlay(fileUrl, filename, playUrl) {
 	if (playUrl && !desktopMode) {
 		openBrowserUrl(playUrl, '_blank')
@@ -1403,6 +1569,16 @@ async function handleAction(method, url, filename, options) {
 
 		if (method === 'install-addon') {
 			await handleInstallAddon()
+			return
+		}
+
+		if (method === 'download-update') {
+			await handleDownloadUpdate()
+			return
+		}
+
+		if (method === 'install-downloaded-update') {
+			await handleInstallDownloadedUpdate()
 			return
 		}
 
