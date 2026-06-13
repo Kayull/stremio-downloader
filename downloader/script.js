@@ -100,6 +100,7 @@ const desktopMode = new URLSearchParams(window.location.search).get('desktop') =
 const PENDING_ACTION_METHODS = ['remove-download', 'stop-download']
 const THEME_STORAGE_KEY = 'stremio-downloader-theme-mode'
 let updatePromptShown = false
+let updateDownloadInFlight = false
 
 function formatExtension(filename) {
 	const decoded = decodeDisplayValue(filename)
@@ -1116,27 +1117,36 @@ async function checkForAppUpdate() {
 	if (settings.skippedReleaseVersion && settings.skippedReleaseVersion === String(releaseInfo.latestVersion || '').trim().replace(/^v/i, ''))
 		return
 
+	const canDownloadUpdate = desktopMode && releaseInfo.updateAsset && releaseInfo.updateAsset.downloadUrl
+	const primaryAction = canDownloadUpdate
+		? {
+			label: 'Download Update',
+			method: 'download-update',
+			className: 'dialog-button-primary'
+		}
+		: {
+			label: 'Open Release',
+			externalUrl: releaseInfo.releaseUrl,
+			className: 'dialog-button-primary'
+		}
+
 	updatePromptShown = true
 	showDialog(
 		'Update available',
 		'A newer version of Stremio Downloader is available. You are running ' +
 			(releaseInfo.currentVersion || 'an older version') +
 			' and the latest release is ' + releaseInfo.latestVersion + '.',
-			[
-				{
-					label: 'Open Release',
-					externalUrl: releaseInfo.releaseUrl,
-					className: 'dialog-button-primary'
-				},
-				{
-					label: 'Skip this version',
-					method: 'skip-release-version',
-					url: releaseInfo.latestVersion,
-					className: 'dialog-button-secondary'
-				},
-				{
-					label: 'Later',
-					closeOnly: true,
+		[
+			primaryAction,
+			{
+				label: 'Skip this version',
+				method: 'skip-release-version',
+				url: releaseInfo.latestVersion,
+				className: 'dialog-button-secondary'
+			},
+			{
+				label: 'Later',
+				closeOnly: true,
 				className: 'dialog-button-secondary'
 			}
 		]
@@ -1389,6 +1399,51 @@ async function handleInstallAddon() {
 	window.location.assign(result.url)
 }
 
+async function handleDownloadUpdate() {
+	if (updateDownloadInFlight)
+		return
+
+	updateDownloadInFlight = true
+	showDialog('Downloading update...', 'Stremio Downloader is downloading the latest release.', [])
+
+	try {
+		const result = await requestJson('download-update', null, null, { desktop: 'true' })
+		if (!result.done)
+			throw new Error(result.message || 'Could not download the update.')
+
+		showDialog(
+			'Update downloaded',
+			'Would you like to quit the app to install the update?',
+			[
+				{
+					label: 'Quit and Install',
+					method: 'install-downloaded-update',
+					className: 'dialog-button-primary'
+				},
+				{
+					label: 'Later',
+					closeOnly: true,
+					className: 'dialog-button-secondary'
+				}
+			]
+		)
+	} catch (err) {
+		showErrorDialog('Update download failed', getRequestFailureMessage(err, err.message))
+	} finally {
+		updateDownloadInFlight = false
+	}
+}
+
+async function handleInstallDownloadedUpdate() {
+	showDialog('Installing update...', 'Stremio Downloader is quitting to install the update.', [])
+
+	const result = await requestJson('install-downloaded-update', null, null, { desktop: 'true' })
+	if (!result.done)
+		throw new Error(result.message || 'Could not prepare the update installer.')
+
+	showDialog('Installing update...', 'Stremio Downloader is quitting to install the update.', [])
+}
+
 async function handlePlay(fileUrl, filename, playUrl) {
 	if (playUrl && !desktopMode) {
 		openBrowserUrl(playUrl, '_blank')
@@ -1419,6 +1474,16 @@ async function handleAction(method, url, filename, options) {
 
 		if (method === 'install-addon') {
 			await handleInstallAddon()
+			return
+		}
+
+		if (method === 'download-update') {
+			await handleDownloadUpdate()
+			return
+		}
+
+		if (method === 'install-downloaded-update') {
+			await handleInstallDownloadedUpdate()
 			return
 		}
 
