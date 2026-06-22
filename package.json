@@ -22,7 +22,7 @@
     "mime-types": "3.0.2"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.2"
+    "@tauri-apps/cli": "^2.11.3"
   },
   "engines": {
     "node": ">=18"
